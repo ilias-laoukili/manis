@@ -1,46 +1,15 @@
-//! Core domain types for `manis`, a declarative Linux hardening audit CLI.
+//! Core library for `manis`, a declarative, read-only Linux hardening audit CLI.
 
-/// Result status of evaluating a single hardening rule.
-///
-/// Missing or unreadable system values must never silently map to [`Status::Pass`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Status {
-    /// Checked value is present and compliant.
-    Pass,
-    /// Checked value is present and non-compliant.
-    Fail,
-    /// Value could not be fully verified (e.g., missing key or insufficient permissions).
-    Warn,
-    /// Rule was explicitly waived or is not applicable to the target OS.
-    Skip,
-    /// Control cannot be reliably automated and requires manual verification.
-    Manual,
-    /// Unexpected internal or collector failure.
-    Error,
-}
+pub mod checks;
+pub mod cli;
+pub mod engine;
+pub mod error;
+pub mod model;
+pub mod report;
+pub mod rules;
+pub mod sys;
 
-impl Status {
-    /// Returns the canonical uppercase label used in CLI tables and structured reports.
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Pass => "PASS",
-            Self::Fail => "FAIL",
-            Self::Warn => "WARN",
-            Self::Skip => "SKIP",
-            Self::Manual => "MANUAL",
-            Self::Error => "ERROR",
-        }
-    }
-}
-
-/// Severity level assigned to a hardening control.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Severity {
-    Low,
-    Medium,
-    High,
-    Critical,
-}
+pub use model::{AuditReport, AuditSummary, BenchmarkRefs, RuleResult, Severity, Status};
 
 #[cfg(test)]
 mod tests {

@@ -1,0 +1,15 @@
+# Fixture metadata overlay (only loaded when --root is explicitly passed)
+[files."/usr/bin/passwd"]
+mode = "4755"
+uid = 0
+gid = 0
+
+[files."/usr/local/bin/custom-suid"]
+mode = "4755"
+uid = 0
+gid = 0
+
+[files."/usr/local/bin/debug-helper"]
+mode = "4777"
+uid = 0
+gid = 0

@@ -1,0 +1,2 @@
+# /etc/profile: system-wide .profile file for the Bourne shell
+umask 022

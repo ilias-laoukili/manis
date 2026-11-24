@@ -1,0 +1,1 @@
+BOOT_IMAGE=/vmlinuz-6.8.0-45-generic root=UUID=0000-default ro quiet

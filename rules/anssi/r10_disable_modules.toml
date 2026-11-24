@@ -1,0 +1,26 @@
+id = "KERN-002"
+title = "Disable dynamic kernel module loading"
+description = "Verifies that kernel.modules_disabled is set to 1 to lock module loading after boot on reinforced systems."
+severity = "medium"
+profiles = ["anssi-reinforced"]
+
+remediation = """
+After all required kernel modules are loaded at boot, lock module loading via /etc/sysctl.d/99-manis-modules.conf:
+  kernel.modules_disabled = 1
+Note: once set to 1, no further kernel modules can be loaded until the next reboot.
+"""
+
+[references]
+cis = []
+anssi = ["R10"]
+nist = ["CM-7", "SI-7"]
+
+
+[check]
+type = "sysctl"
+on_missing = "warn"
+
+[[check.params]]
+key = "kernel.modules_disabled"
+op = "eq"
+value = "1"

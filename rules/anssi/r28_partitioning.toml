@@ -1,0 +1,74 @@
+id = "FS-001"
+title = "Filesystem partitioning and restrictive mount options"
+description = "Verifies mandatory dedicated partitions (/tmp, /var, /home) with restrictive mount flags, and enforces hardening options on reinforced mounts (/var/tmp, /var/log, /boot, /usr, /dev/shm, and /proc hidepid) whenever mounted separately."
+severity = "high"
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced"]
+
+remediation = """
+Configure dedicated partitions and restrictive mount options in /etc/fstab (and remount):
+  Mandatory dedicated mounts:
+    /tmp      nodev,nosuid,noexec
+    /var      (separate partition)
+    /home     nodev,nosuid
+  Reinforced mounts (enforced when mounted separately):
+    /var/tmp  nodev,nosuid,noexec
+    /var/log  nodev,nosuid,noexec
+    /boot     nodev,nosuid,noexec
+    /usr      nodev
+    /dev/shm  nodev,nosuid,noexec
+    /proc     hidepid=2 (or hidepid=invisible)
+"""
+
+[references]
+cis = ["1.1.2.1", "1.1.2.2"]
+anssi = ["R28"]
+nist = ["CM-6", "CM-7"]
+
+
+[check]
+type = "mount_options"
+
+[[check.mounts]]
+path = "/tmp"
+required_separate = true
+required_options = ["nodev", "nosuid", "noexec"]
+
+[[check.mounts]]
+path = "/var"
+required_separate = true
+required_options = []
+
+[[check.mounts]]
+path = "/home"
+required_separate = true
+required_options = ["nodev", "nosuid"]
+
+[[check.mounts]]
+path = "/var/tmp"
+required_separate = false
+required_options = ["nodev", "nosuid", "noexec"]
+
+[[check.mounts]]
+path = "/var/log"
+required_separate = false
+required_options = ["nodev", "nosuid", "noexec"]
+
+[[check.mounts]]
+path = "/boot"
+required_separate = false
+required_options = ["nodev", "nosuid", "noexec"]
+
+[[check.mounts]]
+path = "/usr"
+required_separate = false
+required_options = ["nodev"]
+
+[[check.mounts]]
+path = "/dev/shm"
+required_separate = false
+required_options = ["nodev", "nosuid", "noexec"]
+
+[[check.mounts]]
+path = "/proc"
+required_separate = false
+any_of_options = [["hidepid=1", "hidepid=2", "hidepid=invisible", "hidepid=ptraceable"]]

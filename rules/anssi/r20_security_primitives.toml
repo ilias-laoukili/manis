@@ -1,0 +1,39 @@
+id = "KERN-004"
+title = "Kernel security primitives (SECCOMP and Yama LSM)"
+description = "Verifies that the kernel is built with SECCOMP syscall filtering, LSM security hooks, and Yama ptrace restrictions enabled."
+severity = "high"
+profiles = ["anssi-intermediary", "anssi-reinforced"]
+
+remediation = """
+Ensure your distribution kernel is compiled with:
+  CONFIG_SECCOMP=y
+  CONFIG_SECCOMP_FILTER=y
+  CONFIG_SECURITY=y
+  CONFIG_SECURITY_YAMA=y
+If running a custom kernel, rebuild with these options enabled.
+"""
+
+[references]
+cis = []
+anssi = ["R20"]
+nist = ["CM-6", "SC-39"]
+
+
+[check]
+type = "kernel_config"
+
+[[check.options]]
+name = "CONFIG_SECCOMP"
+expected = "y"
+
+[[check.options]]
+name = "CONFIG_SECCOMP_FILTER"
+expected = "y"
+
+[[check.options]]
+name = "CONFIG_SECURITY"
+expected = "y"
+
+[[check.options]]
+name = "CONFIG_SECURITY_YAMA"
+expected = "y"

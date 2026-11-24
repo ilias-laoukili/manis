@@ -1,0 +1,32 @@
+id = "AUTH-001"
+title = "Interactive shell inactivity timeout (TMOUT)"
+description = "Verifies that shell sessions enforce an inactivity timeout (TMOUT between 1 and 600 seconds) marked readonly across global shell profile files."
+severity = "medium"
+profiles = ["cis-l1-server", "anssi-minimal", "anssi-intermediary", "anssi-reinforced"]
+
+remediation = """
+Create /etc/profile.d/99-manis-tmout.sh with:
+  TMOUT=600
+  readonly TMOUT
+  export TMOUT
+Ensure no other shell startup file overrides TMOUT with 0 or a value above 600.
+"""
+
+[references]
+cis = ["5.4.3.2"]
+anssi = ["R32"]
+nist = ["AC-12"]
+
+
+[check]
+type = "file_content"
+mode = "shell_timeout"
+var = "TMOUT"
+max_seconds = 600
+require_readonly = true
+paths = [
+  "/etc/profile",
+  "/etc/bash.bashrc",
+  "/etc/bashrc",
+  "/etc/profile.d/*.sh",
+]

@@ -1,0 +1,3 @@
+Defaults env_reset
+Defaults use_pty
+root ALL=(ALL:ALL) ALL

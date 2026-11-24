@@ -1,0 +1,80 @@
+id = "KERN-001"
+title = "Kernel sysctl hardening parameters"
+description = "Verifies core Linux kernel runtime parameters restricting dmesg access, kernel pointer exposure, ASLR, SysRq, unprivileged eBPF, perf events, and panic behavior."
+severity = "high"
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced"]
+
+remediation = """
+Create /etc/sysctl.d/99-manis-kernel.conf with:
+  kernel.dmesg_restrict = 1
+  kernel.kptr_restrict = 2
+  kernel.pid_max = 65536
+  kernel.perf_event_paranoid = 2
+  kernel.perf_cpu_time_max_percent = 1
+  kernel.perf_event_max_sample_rate = 1
+  kernel.randomize_va_space = 2
+  kernel.sysrq = 0
+  kernel.unprivileged_bpf_disabled = 1
+  kernel.panic_on_oops = 1
+Then reload with: sudo sysctl --system
+"""
+
+[references]
+cis = ["1.5.1"]
+anssi = ["R9"]
+nist = ["CM-6", "SC-30", "SI-16"]
+
+
+[check]
+type = "sysctl"
+on_missing = "warn"
+
+[[check.params]]
+key = "kernel.dmesg_restrict"
+op = "eq"
+value = "1"
+
+[[check.params]]
+key = "kernel.kptr_restrict"
+op = "eq"
+value = "2"
+
+[[check.params]]
+key = "kernel.pid_max"
+op = "ge"
+value = "32768"
+
+[[check.params]]
+key = "kernel.perf_event_paranoid"
+op = "ge"
+value = "2"
+
+[[check.params]]
+key = "kernel.perf_cpu_time_max_percent"
+op = "le"
+value = "1"
+
+[[check.params]]
+key = "kernel.perf_event_max_sample_rate"
+op = "le"
+value = "1"
+
+[[check.params]]
+key = "kernel.randomize_va_space"
+op = "eq"
+value = "2"
+
+[[check.params]]
+key = "kernel.sysrq"
+op = "eq"
+value = "0"
+
+[[check.params]]
+key = "kernel.unprivileged_bpf_disabled"
+op = "ge"
+value = "1"
+
+[[check.params]]
+key = "kernel.panic_on_oops"
+op = "eq"
+value = "1"

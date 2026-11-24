@@ -1,0 +1,10 @@
+/dev/sda2 / ext4 rw,relatime 0 0
+/dev/sda1 /boot ext4 rw,nosuid,nodev,noexec,relatime 0 0
+tmpfs /tmp tmpfs rw,nosuid,nodev,noexec,relatime 0 0
+/dev/mapper/vg-var /var ext4 rw,relatime 0 0
+/dev/mapper/vg-vartmp /var/tmp ext4 rw,nosuid,nodev,noexec,relatime 0 0
+/dev/mapper/vg-varlog /var/log ext4 rw,nosuid,nodev,noexec,relatime 0 0
+/dev/mapper/vg-home /home ext4 rw,nosuid,nodev,relatime 0 0
+/dev/mapper/vg-usr /usr ext4 ro,nodev,relatime 0 0
+tmpfs /dev/shm tmpfs rw,nosuid,nodev,noexec 0 0
+proc /proc proc rw,nosuid,nodev,noexec,relatime,hidepid=invisible 0 0
