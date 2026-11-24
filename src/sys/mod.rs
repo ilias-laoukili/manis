@@ -40,6 +40,11 @@ impl FileMeta {
     pub const fn is_world_writable(&self) -> bool {
         (self.mode & 0o0002) != 0
     }
+
+    /// Returns `true` when the sticky bit (`0o1000`) is set.
+    pub const fn has_sticky_bit(&self) -> bool {
+        (self.mode & 0o1000) != 0
+    }
 }
 
 /// Deterministic directory entry returned by [`SystemView::read_dir`].
@@ -67,6 +72,8 @@ pub struct WalkedFile {
 pub struct WalkReport {
     /// Discovered regular files, sorted lexicographically by virtual path.
     pub files: Vec<WalkedFile>,
+    /// Discovered directories (excluding root `/`), sorted lexicographically by virtual path.
+    pub dirs: Vec<WalkedFile>,
     /// Virtual paths that could not be inspected due to permissions or I/O errors.
     pub unreadable_paths: Vec<String>,
 }
@@ -87,6 +94,9 @@ pub trait SystemView {
 
     /// Reads file metadata (mode, uid, gid, file type) without following symlinks.
     fn metadata(&self, path: &str) -> Result<FileMeta, SystemError>;
+
+    /// Reads the target of a symbolic link at the virtual path (e.g. `/dev/null` for a masked unit).
+    fn read_link(&self, path: &str) -> Result<String, SystemError>;
 
     /// Lists entries in a directory sorted lexicographically by name.
     fn read_dir(&self, path: &str) -> Result<Vec<DirEntryInfo>, SystemError>;

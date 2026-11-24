@@ -1,0 +1,20 @@
+id = "FW-003"
+title = "Ensure host firewall enforces default deny input policy"
+description = "Verifies that the active host firewall enforces a default DROP or REJECT policy for incoming network traffic."
+severity = "high"
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced"]
+artifact_uri = "etc/default/ufw"
+remediation = '''
+Configure a default deny input policy:
+  sudo ufw default deny incoming
+(Or set 'policy drop;' on the input hook chain in /etc/nftables.conf.)
+'''
+
+[references]
+cis = ["4.2.7"]
+anssi = []
+nist = ["SC-7"]
+
+[check]
+type = "firewall_config"
+mode = "default_deny_input"

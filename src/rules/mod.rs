@@ -19,6 +19,10 @@ macro_rules! embed_rules {
 }
 
 const EMBEDDED_RULES: &[(&str, &str)] = embed_rules!(
+    "rules/apparmor/mac_001_apparmor_installed.toml",
+    "rules/apparmor/mac_002_apparmor_bootloader.toml",
+    "rules/apparmor/mac_003_apparmor_profiles_l1.toml",
+    "rules/apparmor/mac_004_apparmor_profiles_enforce.toml",
     "rules/auth/auth_001_tmout.toml",
     "rules/auth/auth_002_umask.toml",
     "rules/auth/auth_003_pass_max_days.toml",
@@ -27,6 +31,18 @@ const EMBEDDED_RULES: &[(&str, &str)] = embed_rules!(
     "rules/auth/auth_006_empty_shadow.toml",
     "rules/auth/auth_007_issue_banner.toml",
     "rules/auth/auth_008_issue_net_banner.toml",
+    "rules/auth/auth_009_pwquality_installed.toml",
+    "rules/auth/auth_010_pwquality_minlen.toml",
+    "rules/auth/auth_011_pwquality_complexity.toml",
+    "rules/auth/auth_012_faillock_enabled.toml",
+    "rules/auth/auth_013_faillock_deny.toml",
+    "rules/auth/auth_014_faillock_unlock_time.toml",
+    "rules/auth/auth_015_pwhistory.toml",
+    "rules/auth/auth_016_pam_unix_hash.toml",
+    "rules/auth/auth_017_pam_unix_no_nullok.toml",
+    "rules/auth/auth_018_system_accounts_nologin.toml",
+    "rules/boot/boot_001_grub_perms.toml",
+    "rules/boot/boot_002_grub_password.toml",
     "rules/filesystem/file_001_passwd_perms.toml",
     "rules/filesystem/file_002_passwd_bak_perms.toml",
     "rules/filesystem/file_003_group_perms.toml",
@@ -45,6 +61,11 @@ const EMBEDDED_RULES: &[(&str, &str)] = embed_rules!(
     "rules/filesystem/fs_006_hfsplus_disabled.toml",
     "rules/filesystem/fs_007_jffs2_disabled.toml",
     "rules/filesystem/fs_008_udf_disabled.toml",
+    "rules/filesystem/fs_009_world_writable.toml",
+    "rules/firewall/fw_001_package_installed.toml",
+    "rules/firewall/fw_002_single_enabled.toml",
+    "rules/firewall/fw_003_default_deny_input.toml",
+    "rules/firewall/fw_004_loopback.toml",
     "rules/kernel/kern_001_sysctl.toml",
     "rules/kernel/kern_002_disable_modules.toml",
     "rules/kernel/kern_003_module_signature.toml",
@@ -52,12 +73,39 @@ const EMBEDDED_RULES: &[(&str, &str)] = embed_rules!(
     "rules/kernel/kern_005_ptrace_scope.toml",
     "rules/kernel/kern_006_core_dumps.toml",
     "rules/kernel/kern_007_fs_protections.toml",
+    "rules/logging/log_001_journald_persistent.toml",
+    "rules/logging/log_002_journald_compress.toml",
+    "rules/logging/log_003_auditd_installed.toml",
+    "rules/logging/log_004_auditd_enabled.toml",
+    "rules/logging/log_005_audit_boot_enabled.toml",
+    "rules/logging/log_006_audit_backlog_limit.toml",
+    "rules/logging/log_007_auditd_keep_logs.toml",
+    "rules/logging/log_008_auditd_full_action.toml",
+    "rules/logging/log_009_audit_rules_sudoers.toml",
+    "rules/logging/log_010_audit_rules_time.toml",
+    "rules/logging/log_011_audit_rules_identity.toml",
+    "rules/logging/log_012_audit_rules_modules.toml",
+    "rules/logging/log_013_audit_rules_immutable.toml",
+    "rules/logging/log_014_aide_installed.toml",
+    "rules/logging/log_015_aide_scheduled.toml",
     "rules/manual/man_001_firmware_boot.toml",
     "rules/manual/man_002_disk_encryption.toml",
     "rules/manual/man_003_physical_access.toml",
     "rules/network/net_001_ipv4.toml",
     "rules/network/net_002_ipv6.toml",
     "rules/packages/pkg_001_trusted_repos.toml",
+    "rules/services/svc_001_nis_absent.toml",
+    "rules/services/svc_002_rsh_absent.toml",
+    "rules/services/svc_003_telnet_absent.toml",
+    "rules/services/svc_004_avahi_disabled.toml",
+    "rules/services/svc_005_cups_disabled.toml",
+    "rules/services/svc_006_rpcbind_disabled.toml",
+    "rules/services/svc_007_rsync_disabled.toml",
+    "rules/services/svc_008_snmpd_disabled.toml",
+    "rules/services/svc_009_vsftpd_disabled.toml",
+    "rules/services/svc_010_ntp_installed.toml",
+    "rules/services/svc_011_ntp_single_daemon.toml",
+    "rules/services/svc_012_ntp_servers.toml",
     "rules/ssh/ssh_001_config_perms.toml",
     "rules/ssh/ssh_002_permit_root_login.toml",
     "rules/ssh/ssh_003_permit_empty_passwords.toml",
@@ -186,11 +234,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn embedded_catalog_loads_all_55_rules_validly() {
+    fn embedded_catalog_loads_all_103_rules_validly() {
         let reg = RuleRegistry::load_embedded().expect("embedded rules should parse");
-        assert_eq!(reg.all_rules().len(), 55);
+        assert_eq!(reg.all_rules().len(), 103);
         assert!(reg.profiles().len() >= 5);
-        // Every rule produces a non-empty relative artifact URI for SARIF 2.1.0.
         for rule in reg.all_rules() {
             let uri = rule.resolved_artifact_uri();
             assert!(!uri.is_empty() && !uri.starts_with('/'));
@@ -203,7 +250,8 @@ mod tests {
 
         assert_eq!(reg.find_by_identifier("SSH-002")[0].id, "SSH-002");
         assert_eq!(reg.find_by_identifier("5.1.20")[0].id, "SSH-002");
-        assert_eq!(reg.find_by_identifier("CIS 7.1.5")[0].id, "FILE-005");
+        assert_eq!(reg.find_by_identifier("CIS 1.4.1")[0].id, "BOOT-002");
+        assert_eq!(reg.find_by_identifier("6.2.3.20")[0].id, "LOG-013");
         assert!(reg
             .find_by_identifier("R9")
             .iter()
@@ -211,11 +259,18 @@ mod tests {
     }
 
     #[test]
-    fn profile_filtering_rejects_unknown_profile() {
+    fn profile_filtering_respects_l1_vs_l2_apparmor() {
         let reg = RuleRegistry::load_embedded().expect("registry");
         assert!(reg.rules_for_profile("nonexistent").is_err());
-        assert_eq!(reg.rules_for_profile("all").unwrap().len(), 55);
-        assert!(reg.rules_for_profile("cis-l1-server").unwrap().len() >= 45);
-        assert!(reg.rules_for_profile("anssi-minimal").unwrap().len() >= 10);
+        assert_eq!(reg.rules_for_profile("all").unwrap().len(), 103);
+
+        let cis_l1 = reg.rules_for_profile("cis-l1-server").unwrap();
+        assert!(cis_l1.len() >= 90);
+        assert!(cis_l1.iter().any(|r| r.id == "MAC-003"));
+        assert!(!cis_l1.iter().any(|r| r.id == "MAC-004"));
+
+        let reinforced = reg.rules_for_profile("anssi-reinforced").unwrap();
+        assert!(reinforced.iter().any(|r| r.id == "MAC-004"));
+        assert!(reg.rules_for_profile("anssi-minimal").unwrap().len() >= 20);
     }
 }

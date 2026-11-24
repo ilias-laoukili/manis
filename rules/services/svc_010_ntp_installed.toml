@@ -1,0 +1,19 @@
+id = "SVC-010"
+title = "Ensure a time synchronization package is installed"
+description = "Verifies that either 'chrony' or 'systemd-timesyncd' is installed for accurate system clock synchronization."
+severity = "medium"
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced"]
+remediation = '''
+Install chrony (recommended) or systemd-timesyncd:
+  sudo apt-get update && sudo apt-get install -y chrony
+'''
+
+[references]
+cis = ["2.3.1.1"]
+anssi = []
+nist = ["AU-8"]
+
+[check]
+type = "package_state"
+mode = "any_installed"
+packages = ["chrony", "systemd-timesyncd"]

@@ -68,3 +68,22 @@ gid = 0
 mode = "0700"
 uid = 0
 gid = 0
+
+[files."/boot/grub/grub.cfg"]
+mode = "0600"
+uid = 0
+gid = 0
+
+[files."/etc/systemd/system/avahi-daemon.service"]
+symlink_target = "/dev/null"
+
+[files."/etc/systemd/system/cups.service"]
+symlink_target = "/dev/null"
+
+[files."/etc/systemd/system/systemd-timesyncd.service"]
+symlink_target = "/dev/null"
+
+[files."/tmp"]
+mode = "1777"
+uid = 0
+gid = 0

@@ -1,0 +1,19 @@
+id = "AUTH-018"
+title = "Ensure system accounts do not have a valid login shell"
+description = "Verifies in /etc/passwd that non-root system accounts (UID < 1000, excluding root, sync, shutdown, halt) are assigned a non-interactive shell (/usr/sbin/nologin or /bin/false)."
+severity = "medium"
+profiles = ["cis-l1-server", "anssi-minimal", "anssi-intermediary", "anssi-reinforced"]
+remediation = '''
+Assign a non-interactive shell to each offending system account:
+  sudo usermod -s /usr/sbin/nologin <username>
+'''
+
+[references]
+cis = ["5.4.2.7"]
+anssi = []
+nist = ["AC-2", "AC-6"]
+
+[check]
+type = "file_content"
+mode = "system_accounts_nologin"
+paths = ["/etc/passwd"]

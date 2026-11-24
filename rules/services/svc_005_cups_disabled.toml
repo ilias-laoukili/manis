@@ -1,0 +1,19 @@
+id = "SVC-005"
+title = "Ensure CUPS print server (cups) is disabled or masked"
+description = "Verifies via /etc/systemd/system that CUPS print server (cups) is not enabled in any systemd target wants directory or is explicitly masked to /dev/null."
+severity = "medium"
+profiles = ["cis-l1-server", "anssi-minimal", "anssi-intermediary", "anssi-reinforced"]
+remediation = '''
+Stop, disable, and mask the service (or purge its package if unused):
+  sudo systemctl --now mask <unit>
+'''
+
+[references]
+cis = ["2.1.4"]
+anssi = []
+nist = ["CM-7"]
+
+[check]
+type = "service_state"
+mode = "all_disabled_or_masked"
+units = ["cups.service", "cups.socket"]

@@ -1,0 +1,19 @@
+id = "SVC-002"
+title = "Ensure legacy rsh client/server packages are not installed"
+description = "Verifies that cleartext rsh packages ('rsh-client', 'rsh-server') are not installed."
+severity = "high"
+profiles = ["cis-l1-server", "anssi-minimal", "anssi-intermediary", "anssi-reinforced"]
+remediation = '''
+Purge legacy rsh packages:
+  sudo apt-get purge -y rsh-client rsh-server
+'''
+
+[references]
+cis = ["2.2.2"]
+anssi = []
+nist = ["CM-7"]
+
+[check]
+type = "package_state"
+mode = "all_absent"
+packages = ["rsh-client", "rsh-server"]

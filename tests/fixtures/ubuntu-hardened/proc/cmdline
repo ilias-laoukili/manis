@@ -1,1 +1,1 @@
-BOOT_IMAGE=/vmlinuz-6.8.0-45-hardened root=UUID=0000-hardened ro
+BOOT_IMAGE=/vmlinuz-6.8.0-45-hardened root=UUID=0000-hardened ro apparmor=1 security=apparmor audit=1 audit_backlog_limit=8192

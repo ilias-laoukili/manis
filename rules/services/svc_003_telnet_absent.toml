@@ -1,0 +1,19 @@
+id = "SVC-003"
+title = "Ensure telnet client/server packages are not installed"
+description = "Verifies that cleartext telnet packages ('telnet', 'inetutils-telnet', 'telnetd') are not installed."
+severity = "high"
+profiles = ["cis-l1-server", "anssi-minimal", "anssi-intermediary", "anssi-reinforced"]
+remediation = '''
+Purge telnet packages:
+  sudo apt-get purge -y telnet inetutils-telnet telnetd
+'''
+
+[references]
+cis = ["2.2.4"]
+anssi = []
+nist = ["CM-7"]
+
+[check]
+type = "package_state"
+mode = "all_absent"
+packages = ["telnet", "inetutils-telnet", "telnetd"]

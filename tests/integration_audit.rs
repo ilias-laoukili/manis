@@ -22,7 +22,7 @@ fn manis_bin() -> Command {
 fn ubuntu_hardened_fixture_passes_cis_l1_server_and_all_profiles_with_exit_0() {
     let fixture = fixture_path("ubuntu-hardened");
 
-    // Default profile in v0.2.0 is `cis-l1-server`.
+    // Default profile is `cis-l1-server`.
     let cis_out = manis_bin()
         .args([
             "audit",
@@ -36,18 +36,19 @@ fn ubuntu_hardened_fixture_passes_cis_l1_server_and_all_profiles_with_exit_0() {
     assert_eq!(
         cis_out.status.code(),
         Some(0),
-        "expected exit 0 on ubuntu-hardened cis-l1-server, stderr: {}",
+        "expected exit 0 on ubuntu-hardened cis-l1-server, stdout: {}, stderr: {}",
+        String::from_utf8_lossy(&cis_out.stdout),
         String::from_utf8_lossy(&cis_out.stderr)
     );
     let cis_report: AuditReport =
         serde_json::from_slice(&cis_out.stdout).expect("valid CIS JSON report");
     assert_eq!(cis_report.profile, "cis-l1-server");
-    assert!(cis_report.summary.total >= 45);
+    assert!(cis_report.summary.total >= 90);
     assert_eq!(cis_report.summary.fail, 0);
     assert_eq!(cis_report.summary.warn, 0);
     assert_eq!(cis_report.summary.pass, cis_report.summary.total);
 
-    // Full `all` profile: 52 automated PASS + 3 explicit MANUAL controls, 0 FAIL, exit 0.
+    // Full `all` profile: 100 automated PASS + 3 explicit MANUAL controls, 0 FAIL, exit 0.
     let all_out = manis_bin()
         .args([
             "audit",
@@ -63,8 +64,8 @@ fn ubuntu_hardened_fixture_passes_cis_l1_server_and_all_profiles_with_exit_0() {
     assert_eq!(all_out.status.code(), Some(0));
     let all_report: AuditReport =
         serde_json::from_slice(&all_out.stdout).expect("valid all JSON report");
-    assert_eq!(all_report.summary.total, 55);
-    assert_eq!(all_report.summary.pass, 52);
+    assert_eq!(all_report.summary.total, 103);
+    assert_eq!(all_report.summary.pass, 100);
     assert_eq!(all_report.summary.manual, 3);
     assert_eq!(all_report.summary.fail, 0);
     assert_eq!(all_report.summary.warn, 0);
@@ -90,8 +91,8 @@ fn ubuntu_default_fixture_fails_unhardened_rules_and_reports_expected_actual_rem
 
     let report: AuditReport =
         serde_json::from_slice(&output.stdout).expect("valid JSON AuditReport");
-    assert_eq!(report.summary.total, 55);
-    assert!(report.summary.fail >= 35);
+    assert_eq!(report.summary.total, 103);
+    assert!(report.summary.fail >= 75);
     assert_eq!(report.summary.manual, 3);
 
     for res in report.results.iter().filter(|r| r.status == Status::Fail) {
@@ -130,6 +131,25 @@ fn ubuntu_default_fixture_fails_unhardened_rules_and_reports_expected_actual_rem
     assert!(joined_details.contains("/usr/local/bin/custom-suid"));
     assert!(joined_details.contains("/usr/local/bin/debug-helper"));
     assert!(joined_details.contains("world-writable"));
+
+    // Verify new v0.3.0 blocks fail on unhardened ubuntu-default.
+    for id in [
+        "BOOT-001", "BOOT-002", "MAC-001", "MAC-002", "MAC-003", "SVC-001", "SVC-003", "SVC-004",
+        "SVC-011", "FW-002", "AUTH-010", "AUTH-014", "AUTH-017", "AUTH-018", "FS-009", "LOG-001",
+        "LOG-003", "LOG-013", "LOG-014",
+    ] {
+        let status = report
+            .results
+            .iter()
+            .find(|r| r.id == id)
+            .unwrap_or_else(|| panic!("rule {id} missing"))
+            .status;
+        assert_eq!(
+            status,
+            Status::Fail,
+            "expected {id} to FAIL on ubuntu-default"
+        );
+    }
 }
 
 #[test]
@@ -157,8 +177,8 @@ fn json_sarif_and_markdown_outputs_are_deterministic_and_sarif_includes_location
         .as_array()
         .expect("sarif results array");
     assert!(
-        results.len() >= 25,
-        "expected multiple SARIF findings on ubuntu-default"
+        results.len() >= 60,
+        "expected broad SARIF findings on ubuntu-default"
     );
     for item in results {
         let uri = item["locations"][0]["physicalLocation"]["artifactLocation"]["uri"]
@@ -193,7 +213,6 @@ extra_trusted_domains = ["untrusted.example.com"]
     )
     .expect("parse config");
 
-    // Before expiration: SSH-002 is SKIP; custom-suid is whitelisted (though debug-helper still fails).
     let before = SimpleDate::parse("2026-05-01").unwrap();
     let rep_before =
         run_audit_with_config(&registry, "all", &view, &cfg, Some(before)).expect("audit before");
@@ -213,7 +232,6 @@ extra_trusted_domains = ["untrusted.example.com"]
     assert!(!fs002.details.iter().any(|d| d.contains("custom-suid")));
     assert!(fs002.details.iter().any(|d| d.contains("debug-helper")));
 
-    // After expiration: SSH-002 reverts to normal FAIL with explicit expiration note.
     let after = SimpleDate::parse("2026-06-02").unwrap();
     let rep_after =
         run_audit_with_config(&registry, "all", &view, &cfg, Some(after)).expect("audit after");
@@ -263,7 +281,6 @@ fn diff_subcommand_detects_fixes_regressions_and_honors_no_fail() {
         .expect("audit hardened");
     assert_eq!(out_hard.status.code(), Some(0));
 
-    // default -> hardened: all improvements (0 regressions -> exit 0).
     let diff_fixed = manis_bin()
         .args([
             "diff",
@@ -278,9 +295,8 @@ fn diff_subcommand_detects_fixes_regressions_and_honors_no_fail() {
     let val: serde_json::Value =
         serde_json::from_slice(&diff_fixed.stdout).expect("valid diff json");
     assert_eq!(val["summary"]["regressions"], 0);
-    assert!(val["summary"]["fixed"].as_u64().unwrap() > 20);
+    assert!(val["summary"]["fixed"].as_u64().unwrap() >= 60);
 
-    // hardened -> default: regressions exist -> exit 1 by default.
     let diff_reg = manis_bin()
         .args([
             "diff",
@@ -292,7 +308,6 @@ fn diff_subcommand_detects_fixes_regressions_and_honors_no_fail() {
     assert_eq!(diff_reg.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&diff_reg.stdout).contains("Regressions"));
 
-    // hardened -> default with --no-fail -> exit 0.
     let diff_no_fail = manis_bin()
         .args([
             "diff",
@@ -315,6 +330,7 @@ fn empty_root_never_produces_false_pass_on_missing_configs() {
     let view = RootFsSystemView::from_root(dir.path()).expect("view");
     let report = run_audit(&registry, "all", &view).expect("audit");
 
+    assert_eq!(report.summary.total, 103);
     for res in &report.results {
         if res.id == "FS-002" {
             assert_eq!(res.status, Status::Pass);
@@ -334,16 +350,18 @@ fn cli_list_explain_config_and_error_exit_codes() {
     let list_out = manis_bin().arg("list").output().expect("manis list");
     assert_eq!(list_out.status.code(), Some(0));
     let list_stdout = String::from_utf8_lossy(&list_out.stdout);
-    assert!(list_stdout.contains("SSH-002"));
-    assert!(list_stdout.contains("FILE-005"));
+    assert!(list_stdout.contains("BOOT-001"));
+    assert!(list_stdout.contains("MAC-003"));
+    assert!(list_stdout.contains("FW-002"));
+    assert!(list_stdout.contains("LOG-013"));
     assert!(list_stdout.contains("REFS"));
 
     let explain_cis = manis_bin()
-        .args(["explain", "5.1.20"])
+        .args(["explain", "5.3.3.1.2"])
         .output()
-        .expect("explain 5.1.20");
+        .expect("explain 5.3.3.1.2");
     assert_eq!(explain_cis.status.code(), Some(0));
-    assert!(String::from_utf8_lossy(&explain_cis.stdout).contains("SSH-002"));
+    assert!(String::from_utf8_lossy(&explain_cis.stdout).contains("AUTH-014"));
 
     let unknown_rule = manis_bin()
         .args(["explain", "DOES-NOT-EXIST"])
@@ -351,7 +369,6 @@ fn cli_list_explain_config_and_error_exit_codes() {
         .expect("explain unknown");
     assert_eq!(unknown_rule.status.code(), Some(2));
 
-    // CLI --config test
     let tmp = tempdir().expect("tempdir");
     let cfg_path = tmp.path().join("manis.toml");
     std::fs::write(

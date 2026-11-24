@@ -1,0 +1,20 @@
+id = "AUTH-017"
+title = "Forbid nullok option on pam_unix authentication"
+description = "Verifies that pam_unix.so in /etc/pam.d/common-auth and /etc/pam.d/common-password does not include 'nullok', which permits blank passwords."
+severity = "critical"
+profiles = ["cis-l1-server", "anssi-minimal", "anssi-intermediary", "anssi-reinforced"]
+remediation = '''
+Remove 'nullok' from all pam_unix.so lines in /etc/pam.d/common-auth and /etc/pam.d/common-password.
+'''
+
+[references]
+cis = ["5.3.3.4.1"]
+anssi = []
+nist = ["IA-5"]
+
+[check]
+type = "file_content"
+mode = "regex"
+match_mode = "no_line"
+paths = ["/etc/pam.d/common-auth", "/etc/pam.d/common-password"]
+pattern = 'pam_unix\.so.*\bnullok\b'

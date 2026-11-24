@@ -1,0 +1,19 @@
+id = "LOG-003"
+title = "Ensure auditd and audispd-plugins packages are installed"
+description = "Verifies that Linux auditing packages ('auditd' and 'audispd-plugins') are installed in /var/lib/dpkg/status."
+severity = "high"
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced"]
+remediation = '''
+Install auditd packages:
+  sudo apt-get update && sudo apt-get install -y auditd audispd-plugins
+'''
+
+[references]
+cis = ["6.2.1.1"]
+anssi = []
+nist = ["AU-2", "AU-12"]
+
+[check]
+type = "package_state"
+mode = "all_installed"
+packages = ["auditd", "audispd-plugins"]

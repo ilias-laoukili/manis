@@ -2,14 +2,18 @@
 
 pub mod file_content;
 pub mod file_meta;
+pub mod firewall_config;
 pub mod kernel_config;
 pub mod manual;
 pub mod mount_options;
 pub mod package_repos;
+pub mod package_state;
+pub mod service_state;
 pub mod sshd_config;
 pub mod sudoers;
 pub mod suid_sgid;
 pub mod sysctl;
+pub mod world_writable;
 
 use crate::config::OverridesConfig;
 use crate::model::{RuleResult, Status};
@@ -96,6 +100,7 @@ pub fn evaluate_rule(
                 suid_sgid::evaluate(&merged, view)
             }
         }
+        CheckSpec::WorldWritable(spec) => world_writable::evaluate(spec, view),
         CheckSpec::PackageRepos(spec) => {
             if overrides.package_repos.extra_trusted_domains.is_empty() {
                 package_repos::evaluate(spec, view)
@@ -111,6 +116,9 @@ pub fn evaluate_rule(
                 package_repos::evaluate(&merged, view)
             }
         }
+        CheckSpec::PackageState(spec) => package_state::evaluate(spec, view),
+        CheckSpec::ServiceState(spec) => service_state::evaluate(spec, view),
+        CheckSpec::FirewallConfig(spec) => firewall_config::evaluate(spec, view),
         CheckSpec::Manual(spec) => manual::evaluate(spec),
     };
 

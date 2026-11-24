@@ -87,7 +87,11 @@ pub enum CheckSpec {
     FileContent(FileContentCheck),
     Sudoers(SudoersCheck),
     SuidSgid(SuidSgidCheck),
+    WorldWritable(WorldWritableCheck),
     PackageRepos(PackageReposCheck),
+    PackageState(PackageStateCheck),
+    ServiceState(ServiceStateCheck),
+    FirewallConfig(FirewallConfigCheck),
     Manual(ManualCheck),
 }
 
@@ -114,7 +118,11 @@ impl CheckSpec {
                 ),
             Self::Sudoers(s) => s.file.trim_start_matches('/').to_string(),
             Self::SuidSgid(_) => "usr/bin".to_string(),
+            Self::WorldWritable(_) => "tmp".to_string(),
             Self::PackageRepos(_) => "etc/apt/sources.list".to_string(),
+            Self::PackageState(s) => s.dpkg_status_path.trim_start_matches('/').to_string(),
+            Self::ServiceState(s) => s.systemd_dir.trim_start_matches('/').to_string(),
+            Self::FirewallConfig(_) => "etc/ufw/ufw.conf".to_string(),
             Self::Manual(_) => "system/manual-control".to_string(),
         }
     }
@@ -284,6 +292,8 @@ pub enum FileContentMode {
     PasswdUidZero,
     ShadowEmptyPasswords,
     Banner,
+    ApparmorProfiles,
+    SystemAccountsNologin,
 }
 
 /// Regex matching mode when `file_content.mode == "regex"`.
@@ -338,6 +348,13 @@ pub struct FileContentCheck {
     /// Inclusive upper bound for `key_value_bound`.
     #[serde(default)]
     pub max: Option<i64>,
+    /// When `true` in `key_value_bound`, a value of `0` is also compliant (e.g. `unlock_time = 0`
+    /// meaning permanent lock until admin unlock).
+    #[serde(default)]
+    pub allow_zero: bool,
+    /// When `true` in `apparmor_profiles`, all loaded profiles must be in `(enforce)` mode.
+    #[serde(default)]
+    pub require_enforce: bool,
 }
 
 /// Evaluation mode for `sudoers`.
@@ -386,12 +403,78 @@ pub struct SuidSgidCheck {
     pub forbid_world_writable: bool,
 }
 
+/// Declarative `world_writable` check primitive detecting world-writable regular files (`o+w`)
+/// and world-writable directories lacking the sticky bit (`+t`).
+#[derive(Debug, Clone, Deserialize)]
+pub struct WorldWritableCheck {
+    #[serde(default = "default_suid_roots")]
+    pub search_roots: Vec<String>,
+    #[serde(default = "default_suid_skips")]
+    pub skip_dirs: Vec<String>,
+    #[serde(default = "default_true")]
+    pub check_files: bool,
+    #[serde(default = "default_true")]
+    pub check_dirs_without_sticky: bool,
+}
+
 /// Declarative `package_repos` check primitive.
 #[derive(Debug, Clone, Deserialize)]
 pub struct PackageReposCheck {
     pub trusted_domains: Vec<String>,
     #[serde(default = "default_true")]
     pub check_gpg: bool,
+}
+
+/// Evaluation mode for `package_state`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PackageStateMode {
+    AllInstalled,
+    AnyInstalled,
+    AllAbsent,
+}
+
+/// Declarative `package_state` primitive parsing `/var/lib/dpkg/status` via [`crate::sys::SystemView`].
+#[derive(Debug, Clone, Deserialize)]
+pub struct PackageStateCheck {
+    pub mode: PackageStateMode,
+    pub packages: Vec<String>,
+    #[serde(default = "default_dpkg_status_path")]
+    pub dpkg_status_path: String,
+}
+
+/// Evaluation mode for `service_state`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ServiceStateMode {
+    AnyEnabled,
+    ExactlyOneEnabled,
+    AllDisabledOrMasked,
+}
+
+/// Declarative `service_state` primitive inspecting systemd symlinks and `*.wants/` directories
+/// without invoking `systemctl`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ServiceStateCheck {
+    pub mode: ServiceStateMode,
+    pub units: Vec<String>,
+    #[serde(default = "default_systemd_dir")]
+    pub systemd_dir: String,
+}
+
+/// Evaluation mode for `firewall_config`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FirewallConfigMode {
+    SingleFirewallEnabled,
+    DefaultDenyInput,
+    LoopbackConfigured,
+}
+
+/// Declarative `firewall_config` primitive inspecting UFW and nftables configuration files.
+#[derive(Debug, Clone, Deserialize)]
+pub struct FirewallConfigCheck {
+    pub mode: FirewallConfigMode,
 }
 
 /// Explicit non-automatable benchmark control.
@@ -402,6 +485,14 @@ pub struct ManualCheck {
 
 const fn default_true() -> bool {
     true
+}
+
+fn default_dpkg_status_path() -> String {
+    "/var/lib/dpkg/status".to_string()
+}
+
+fn default_systemd_dir() -> String {
+    "/etc/systemd/system".to_string()
 }
 
 fn default_tmout_var() -> String {

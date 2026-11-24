@@ -48,3 +48,18 @@ gid = 0
 mode = "0755"
 uid = 0
 gid = 0
+
+[files."/boot/grub/grub.cfg"]
+mode = "0644"
+uid = 0
+gid = 0
+
+[files."/var/cache/insecure-dir"]
+mode = "0777"
+uid = 0
+gid = 0
+
+[files."/var/cache/insecure-dir/world.txt"]
+mode = "0666"
+uid = 0
+gid = 0

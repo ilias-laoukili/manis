@@ -1,0 +1,3 @@
+/usr/sbin/sshd (enforce)
+/usr/sbin/chronyd (enforce)
+/usr/sbin/rsyslogd (enforce)

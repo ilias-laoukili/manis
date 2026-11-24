@@ -1,0 +1,21 @@
+id = "LOG-012"
+title = "Audit kernel module loading and unloading"
+description = "Verifies that /etc/audit/rules.d/*.rules monitors init_module, finit_module, delete_module syscalls or /usr/sbin/kmod execution."
+severity = "high"
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced"]
+artifact_uri = "etc/audit/rules.d/50-kernel_modules.rules"
+remediation = '''
+Add kernel module audit rules to /etc/audit/rules.d/50-kernel_modules.rules (init_module, finit_module, delete_module) and run 'sudo augenrules --load'.
+'''
+
+[references]
+cis = ["6.2.3.19"]
+anssi = []
+nist = ["AU-2", "AU-12"]
+
+[check]
+type = "file_content"
+mode = "regex"
+match_mode = "any_line"
+paths = ["/etc/audit/rules.d/*.rules"]
+pattern = '(init_module|finit_module|delete_module|/usr/sbin/kmod)'

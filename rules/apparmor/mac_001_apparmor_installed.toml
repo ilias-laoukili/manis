@@ -1,0 +1,19 @@
+id = "MAC-001"
+title = "Ensure AppArmor packages are installed"
+description = "Verifies that both 'apparmor' and 'apparmor-utils' packages are installed in /var/lib/dpkg/status."
+severity = "high"
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced"]
+remediation = '''
+Install AppArmor packages:
+  sudo apt-get update && sudo apt-get install -y apparmor apparmor-utils
+'''
+
+[references]
+cis = ["1.3.1.1"]
+anssi = []
+nist = ["AC-3", "CM-6"]
+
+[check]
+type = "package_state"
+mode = "all_installed"
+packages = ["apparmor", "apparmor-utils"]

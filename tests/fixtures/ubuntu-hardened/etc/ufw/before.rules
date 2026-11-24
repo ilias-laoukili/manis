@@ -1,0 +1,4 @@
+*filter
+-A ufw-before-input -i lo -j ACCEPT
+-A ufw-before-input -s 127.0.0.0/8 ! -i lo -j DROP
+COMMIT

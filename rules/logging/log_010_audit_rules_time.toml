@@ -1,0 +1,21 @@
+id = "LOG-010"
+title = "Audit events modifying system date and time"
+description = "Verifies that /etc/audit/rules.d/*.rules collects system calls or file writes modifying system date, time, or /etc/localtime."
+severity = "medium"
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced"]
+artifact_uri = "etc/audit/rules.d/50-time-change.rules"
+remediation = '''
+Add time-change audit rules to /etc/audit/rules.d/50-time-change.rules (adjtimex, settimeofday, clock_settime, /etc/localtime) and run 'sudo augenrules --load'.
+'''
+
+[references]
+cis = ["6.2.3.4"]
+anssi = []
+nist = ["AU-2", "AU-8"]
+
+[check]
+type = "file_content"
+mode = "regex"
+match_mode = "any_line"
+paths = ["/etc/audit/rules.d/*.rules"]
+pattern = '(adjtimex|settimeofday|clock_settime|/etc/localtime)'

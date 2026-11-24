@@ -1,0 +1,26 @@
+id = "SVC-012"
+title = "Ensure authorized NTP time servers are configured"
+description = "Verifies that chrony or systemd-timesyncd explicitly configures authorized NTP server or pool directives."
+severity = "medium"
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced"]
+artifact_uri = "etc/chrony/chrony.conf"
+remediation = '''
+Configure authorized time servers in /etc/chrony/chrony.conf (pool/server directives) or /etc/systemd/timesyncd.conf (NTP=...).
+'''
+
+[references]
+cis = ["2.3.2.1", "2.3.3.1"]
+anssi = []
+nist = ["AU-8"]
+
+[check]
+type = "file_content"
+mode = "regex"
+match_mode = "any_line"
+paths = [
+  "/etc/chrony/chrony.conf",
+  "/etc/chrony/sources.d/*.sources",
+  "/etc/systemd/timesyncd.conf",
+  "/etc/systemd/timesyncd.conf.d/*.conf",
+]
+pattern = '^((server|pool)\s+\S+|NTP=\S+)'

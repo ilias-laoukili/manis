@@ -1,0 +1,21 @@
+id = "LOG-013"
+title = "Make auditd rules configuration immutable (-e 2)"
+description = "Verifies that /etc/audit/rules.d/*.rules ends with '-e 2' so audit rules cannot be altered or disabled until reboot."
+severity = "high"
+profiles = ["cis-l1-server", "anssi-reinforced"]
+artifact_uri = "etc/audit/rules.d/99-finalize.rules"
+remediation = '''
+Add '-e 2' to /etc/audit/rules.d/99-finalize.rules and run 'sudo augenrules --load' (a reboot is required after changing immutable rules).
+'''
+
+[references]
+cis = ["6.2.3.20"]
+anssi = []
+nist = ["AU-9"]
+
+[check]
+type = "file_content"
+mode = "regex"
+match_mode = "any_line"
+paths = ["/etc/audit/rules.d/*.rules"]
+pattern = '^-e\s+2\b'

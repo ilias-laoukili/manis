@@ -26,6 +26,9 @@ struct FixtureEntryOverride {
     /// When `true`, reading this path simulates `SystemError::PermissionDenied`.
     #[serde(default)]
     unreadable: bool,
+    /// Optional simulated symlink target (e.g. `"/dev/null"` for masked systemd units).
+    /// Only honored in `--root` fixture mode, never in live `/` mode.
+    symlink_target: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -39,6 +42,7 @@ struct ParsedEntryOverride {
     uid: Option<u32>,
     gid: Option<u32>,
     unreadable: bool,
+    symlink_target: Option<String>,
 }
 
 impl ParsedOverlay {
@@ -80,6 +84,7 @@ impl ParsedOverlay {
                     uid: ov.uid,
                     gid: ov.gid,
                     unreadable: ov.unreadable,
+                    symlink_target: ov.symlink_target,
                 },
             );
         }
@@ -224,7 +229,15 @@ impl RootFsSystemView {
                 continue;
             }
             if entry.is_dir {
-                self.walk_dir_recursive(&entry.path, skip_dirs, report)?;
+                if !should_skip(&entry.path, skip_dirs) {
+                    if let Ok(meta) = self.metadata(&entry.path) {
+                        report.dirs.push(WalkedFile {
+                            path: entry.path.clone(),
+                            meta,
+                        });
+                    }
+                    self.walk_dir_recursive(&entry.path, skip_dirs, report)?;
+                }
             } else if entry.is_file {
                 match self.metadata(&entry.path) {
                     Ok(meta) => report.files.push(WalkedFile {
@@ -264,8 +277,32 @@ impl SystemView for RootFsSystemView {
     fn metadata(&self, path: &str) -> Result<FileMeta, SystemError> {
         let (norm, host_path) = self.resolve(path)?;
         let md = fs::symlink_metadata(&host_path).map_err(|e| SystemError::from_io(&norm, &e))?;
-        let base = extract_file_meta(&md);
+        let mut base = extract_file_meta(&md);
+        if self
+            .overlay
+            .as_ref()
+            .and_then(|o| o.get(&norm))
+            .is_some_and(|ov| ov.symlink_target.is_some())
+        {
+            base.is_symlink = true;
+            base.is_file = false;
+        }
         Ok(self.apply_overlay(&norm, base))
+    }
+
+    fn read_link(&self, path: &str) -> Result<String, SystemError> {
+        let (norm, host_path) = self.resolve(path)?;
+        self.check_overlay_readable(&norm)?;
+        if let Some(target) = self
+            .overlay
+            .as_ref()
+            .and_then(|o| o.get(&norm))
+            .and_then(|ov| ov.symlink_target.as_ref())
+        {
+            return Ok(target.clone());
+        }
+        let target = fs::read_link(&host_path).map_err(|e| SystemError::from_io(&norm, &e))?;
+        Ok(target.to_string_lossy().into_owned())
     }
 
     fn read_dir(&self, path: &str) -> Result<Vec<DirEntryInfo>, SystemError> {
@@ -311,6 +348,7 @@ impl SystemView for RootFsSystemView {
             self.walk_dir_recursive(&norm, &norm_skips, &mut report)?;
         }
         report.files.sort_by(|a, b| a.path.cmp(&b.path));
+        report.dirs.sort_by(|a, b| a.path.cmp(&b.path));
         report.unreadable_paths.sort();
         report.unreadable_paths.dedup();
         Ok(report)

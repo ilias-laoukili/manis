@@ -17,6 +17,8 @@ pub fn evaluate(spec: &FileContentCheck, view: &dyn SystemView) -> CheckOutcome 
         FileContentMode::PasswdUidZero => eval_passwd_uid_zero(spec, view),
         FileContentMode::ShadowEmptyPasswords => eval_shadow_empty_passwords(spec, view),
         FileContentMode::Banner => eval_banner(spec, view),
+        FileContentMode::ApparmorProfiles => eval_apparmor_profiles(spec, view),
+        FileContentMode::SystemAccountsNologin => eval_system_accounts_nologin(spec, view),
     }
 }
 
@@ -115,7 +117,7 @@ fn eval_key_value_bound(spec: &FileContentCheck, view: &dyn SystemView) -> Check
     let Some(key) = spec.key.as_deref() else {
         return CheckOutcome::error("file_content key_value_bound mode requires 'key'");
     };
-    let expected = format_bound_expected(key, spec.min, spec.max);
+    let expected = format_bound_expected(key, spec.min, spec.max, spec.allow_zero);
     let (paths, mut unreadable) = expand_virtual_paths(view, &spec.paths);
     let mut existing = 0usize;
     let mut last_value: Option<(String, String)> = None;
@@ -129,10 +131,9 @@ fn eval_key_value_bound(spec: &FileContentCheck, view: &dyn SystemView) -> Check
                     if line.is_empty() {
                         continue;
                     }
-                    let mut parts = line.split_whitespace();
-                    if parts.next() == Some(key) {
-                        if let Some(val) = parts.next() {
-                            last_value = Some((path.clone(), val.to_string()));
+                    if let Some((k, v)) = parse_kv_line(line) {
+                        if k == key {
+                            last_value = Some((path.clone(), v.to_string()));
                         }
                     }
                 }
@@ -162,9 +163,9 @@ fn eval_key_value_bound(spec: &FileContentCheck, view: &dyn SystemView) -> Check
 
     match raw.parse::<i64>() {
         Ok(val) => {
-            let min_ok = spec.min.map_or(true, |m| val >= m);
-            let max_ok = spec.max.map_or(true, |m| val <= m);
-            if min_ok && max_ok {
+            let compliant = (spec.allow_zero && val == 0)
+                || (spec.min.map_or(true, |m| val >= m) && spec.max.map_or(true, |m| val <= m));
+            if compliant {
                 finalize_content_outcome(
                     expected,
                     &[format!("{src}: {key}={val}")],
@@ -189,13 +190,182 @@ fn eval_key_value_bound(spec: &FileContentCheck, view: &dyn SystemView) -> Check
     }
 }
 
-fn format_bound_expected(key: &str, min: Option<i64>, max: Option<i64>) -> String {
-    match (min, max) {
+fn parse_kv_line(line: &str) -> Option<(&str, &str)> {
+    if let Some((k, v)) = line.split_once('=') {
+        let key = k.trim();
+        let val = v.trim().trim_matches('"').trim_matches('\'');
+        if !key.is_empty() && !val.is_empty() && !key.contains(char::is_whitespace) {
+            return Some((key, val));
+        }
+    }
+    let mut parts = line.split_whitespace();
+    let key = parts.next()?;
+    let val = parts.next()?;
+    Some((key, val))
+}
+
+fn format_bound_expected(
+    key: &str,
+    min: Option<i64>,
+    max: Option<i64>,
+    allow_zero: bool,
+) -> String {
+    let base = match (min, max) {
         (Some(lo), Some(hi)) => format!("{key} in [{lo}..={hi}]"),
         (Some(lo), None) => format!("{key} >= {lo}"),
         (None, Some(hi)) => format!("{key} <= {hi}"),
         (None, None) => format!("{key} configured"),
+    };
+    if allow_zero {
+        format!("{key} = 0 or {base}")
+    } else {
+        base
     }
+}
+
+fn eval_apparmor_profiles(spec: &FileContentCheck, view: &dyn SystemView) -> CheckOutcome {
+    let path = spec
+        .paths
+        .first()
+        .map_or("/sys/kernel/security/apparmor/profiles", String::as_str);
+    let expected = if spec.require_enforce {
+        "AppArmor profiles loaded and all in enforce mode".to_string()
+    } else {
+        "AppArmor profiles loaded and all in enforce or complain mode".to_string()
+    };
+
+    let content = match view.read_to_string(path) {
+        Ok(c) => c,
+        Err(err) => {
+            return CheckOutcome::warn(
+                expected,
+                format!("{path} unavailable"),
+                vec![format!("{path}: {err}")],
+            );
+        }
+    };
+
+    let mut total = 0usize;
+    let mut enforce_count = 0usize;
+    let mut complain_profiles = Vec::new();
+    let mut other_profiles = Vec::new();
+
+    for raw_line in content.lines() {
+        let line = raw_line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        total += 1;
+        if line.ends_with("(enforce)") {
+            enforce_count += 1;
+        } else if line.ends_with("(complain)") {
+            complain_profiles.push(line.to_string());
+        } else {
+            other_profiles.push(line.to_string());
+        }
+    }
+
+    if total == 0 {
+        return CheckOutcome::fail(
+            expected,
+            "0 AppArmor profiles loaded",
+            vec![format!("{path} contains no loaded AppArmor profiles")],
+        );
+    }
+
+    let mut violations = Vec::new();
+    for p in &other_profiles {
+        violations.push(format!("profile not in enforce/complain mode: {p}"));
+    }
+    if spec.require_enforce {
+        for p in &complain_profiles {
+            violations.push(format!("profile in complain mode (enforce required): {p}"));
+        }
+    }
+
+    if !violations.is_empty() {
+        return CheckOutcome::fail(
+            expected,
+            format!(
+                "{total} profile(s) loaded: {enforce_count} enforce, {} complain, {} other",
+                complain_profiles.len(),
+                other_profiles.len()
+            ),
+            violations,
+        );
+    }
+
+    CheckOutcome::pass(
+        expected,
+        format!(
+            "{total} profile(s) loaded ({enforce_count} enforce, {} complain)",
+            complain_profiles.len()
+        ),
+    )
+}
+
+fn eval_system_accounts_nologin(spec: &FileContentCheck, view: &dyn SystemView) -> CheckOutcome {
+    const EXEMPT_ACCOUNTS: &[&str] = &["root", "sync", "shutdown", "halt"];
+    let path = spec.paths.first().map_or("/etc/passwd", String::as_str);
+    let expected =
+        "all system accounts (UID < 1000, excluding root/sync/shutdown/halt) use a non-interactive shell (nologin/false)";
+
+    let content = match view.read_to_string(path) {
+        Ok(c) => c,
+        Err(err) => {
+            return CheckOutcome::warn(
+                expected,
+                format!("{path} unavailable"),
+                vec![format!("{path}: {err}")],
+            );
+        }
+    };
+
+    let mut checked = 0usize;
+    let mut violations = Vec::new();
+
+    for raw_line in content.lines() {
+        let line = raw_line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let fields: Vec<&str> = line.split(':').collect();
+        if fields.len() < 7 {
+            continue;
+        }
+        let user = fields[0];
+        let Ok(uid) = fields[2].parse::<u32>() else {
+            continue;
+        };
+        let shell = fields[6].trim();
+
+        if uid >= 1000 || EXEMPT_ACCOUNTS.contains(&user) {
+            continue;
+        }
+        checked += 1;
+        let is_non_interactive = shell.ends_with("/nologin") || shell.ends_with("/false");
+        if !is_non_interactive {
+            violations.push(format!(
+                "{path}: system account '{user}' (UID {uid}) has interactive shell '{shell}'"
+            ));
+        }
+    }
+
+    if !violations.is_empty() {
+        return CheckOutcome::fail(
+            expected,
+            format!(
+                "{} system account(s) have a valid login shell",
+                violations.len()
+            ),
+            violations,
+        );
+    }
+
+    CheckOutcome::pass(
+        expected,
+        format!("{checked} system account(s) checked: all use non-interactive shells"),
+    )
 }
 
 fn eval_passwd_uid_zero(spec: &FileContentCheck, view: &dyn SystemView) -> CheckOutcome {
@@ -801,7 +971,91 @@ mod tests {
             key: None,
             min: None,
             max: None,
+            allow_zero: false,
+            require_enforce: false,
         }
+    }
+
+    #[test]
+    fn key_value_bound_supports_equals_and_allow_zero_for_faillock() {
+        let dir = tempdir().expect("tempdir");
+        fs::create_dir_all(dir.path().join("etc/security")).expect("mkdir");
+        let view = RootFsSystemView::from_root(dir.path()).expect("view");
+
+        let mut spec = base_spec(FileContentMode::KeyValueBound);
+        spec.paths = vec!["/etc/security/faillock.conf".to_string()];
+        spec.key = Some("unlock_time".to_string());
+        spec.min = Some(900);
+        spec.allow_zero = true;
+
+        fs::write(
+            dir.path().join("etc/security/faillock.conf"),
+            "unlock_time = 0\n",
+        )
+        .expect("w");
+        assert_eq!(evaluate(&spec, &view).status, Status::Pass);
+
+        fs::write(
+            dir.path().join("etc/security/faillock.conf"),
+            "unlock_time = 900\n",
+        )
+        .expect("w");
+        assert_eq!(evaluate(&spec, &view).status, Status::Pass);
+
+        fs::write(
+            dir.path().join("etc/security/faillock.conf"),
+            "unlock_time = 300\n",
+        )
+        .expect("w");
+        assert_eq!(evaluate(&spec, &view).status, Status::Fail);
+    }
+
+    #[test]
+    fn apparmor_profiles_distinguishes_l1_complain_and_l2_enforce() {
+        let dir = tempdir().expect("tempdir");
+        fs::create_dir_all(dir.path().join("sys/kernel/security/apparmor")).expect("mkdir");
+        fs::write(
+            dir.path().join("sys/kernel/security/apparmor/profiles"),
+            "/usr/sbin/sshd (enforce)\n/usr/bin/tcpdump (complain)\n",
+        )
+        .expect("write");
+        let view = RootFsSystemView::from_root(dir.path()).expect("view");
+
+        let mut l1 = base_spec(FileContentMode::ApparmorProfiles);
+        l1.paths = vec!["/sys/kernel/security/apparmor/profiles".to_string()];
+        l1.require_enforce = false;
+        assert_eq!(evaluate(&l1, &view).status, Status::Pass);
+
+        let mut l2 = l1.clone();
+        l2.require_enforce = true;
+        assert_eq!(evaluate(&l2, &view).status, Status::Fail);
+    }
+
+    #[test]
+    fn system_accounts_nologin_flags_interactive_shell_and_allows_exempt() {
+        let dir = tempdir().expect("tempdir");
+        fs::create_dir_all(dir.path().join("etc")).expect("mkdir");
+        let view = RootFsSystemView::from_root(dir.path()).expect("view");
+        let mut spec = base_spec(FileContentMode::SystemAccountsNologin);
+        spec.paths = vec!["/etc/passwd".to_string()];
+
+        assert_eq!(evaluate(&spec, &view).status, Status::Warn);
+
+        fs::write(
+            dir.path().join("etc/passwd"),
+            "root:x:0:0:root:/root:/bin/bash\nsync:x:4:65534:sync:/bin:/bin/sync\ndaemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin\nwww-data:x:33:33:www:/var/www:/bin/false\nubuntu:x:1000:1000::/home/ubuntu:/bin/bash\n",
+        )
+        .expect("write");
+        assert_eq!(evaluate(&spec, &view).status, Status::Pass);
+
+        fs::write(
+            dir.path().join("etc/passwd"),
+            "root:x:0:0:root:/root:/bin/bash\ndaemon:x:1:1:daemon:/usr/sbin:/bin/bash\n",
+        )
+        .expect("write");
+        let fail = evaluate(&spec, &view);
+        assert_eq!(fail.status, Status::Fail);
+        assert_eq!(fail.details.len(), 1);
     }
 
     #[test]

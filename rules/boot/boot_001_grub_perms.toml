@@ -1,0 +1,23 @@
+id = "BOOT-001"
+title = "Restrict permissions and ownership on /boot/grub/grub.cfg"
+description = "Verifies that /boot/grub/grub.cfg is owned by root:root with permissions 0600 or more restrictive to prevent unauthorized reading or tampering."
+severity = "high"
+profiles = ["cis-l1-server", "anssi-minimal", "anssi-intermediary", "anssi-reinforced"]
+remediation = '''
+Enforce root-only permissions on /boot/grub/grub.cfg:
+  sudo chown root:root /boot/grub/grub.cfg
+  sudo chmod 0600 /boot/grub/grub.cfg
+'''
+
+[references]
+cis = ["1.4.2"]
+anssi = []
+nist = ["AC-6", "CM-6"]
+
+[check]
+type = "file_meta"
+path = "/boot/grub/grub.cfg"
+max_mode = "0600"
+expected_uid = 0
+allowed_gids = [0]
+on_missing = "warn"

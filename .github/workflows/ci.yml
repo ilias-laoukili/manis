@@ -69,7 +69,7 @@ jobs:
           docker run --rm -v /tmp/manis-ci:/work ubuntu:24.04 bash -euxo pipefail -c '
             export DEBIAN_FRONTEND=noninteractive
             apt-get update -qq
-            apt-get install -y -qq --no-install-recommends sudo openssh-server python3 >/dev/null
+            apt-get install -y -qq --no-install-recommends sudo openssh-server python3 libpam-pwquality auditd >/dev/null
 
             # 1. Non-root live run: must report WARN (never PASS) on unreadable /etc/shadow & /etc/sudoers
             su -s /bin/bash nobody -c "/work/manis audit --format json --output /tmp/nonroot.json || true"
@@ -84,8 +84,17 @@ jobs:
           print("Non-root live WARN checks passed.")
           PY
 
-            # 2. Root live baseline on raw ubuntu:24.04
+            # 2. Root live baseline on raw ubuntu:24.04 + verify container-absent controls emit WARN (never PASS)
             /work/manis audit --format json --output /work/baseline.json || true
+            python3 - <<PY
+          import json
+          rep = json.load(open("/work/baseline.json"))
+          by_id = {r["id"]: r["status"] for r in rep["results"]}
+          for rule_id in ["BOOT-001", "BOOT-002", "FW-002"]:
+              st = by_id[rule_id]
+              assert st != "PASS", f"container-absent control {rule_id} must never silently PASS (got {st})"
+          print("Container non-applicable WARN/no-false-PASS checks passed.")
+          PY
 
             # 3. Validate SARIF 2.1.0 output structure & mandatory locations
             /work/manis audit --format sarif --output /work/baseline.sarif || true
@@ -101,7 +110,7 @@ jobs:
           print(f"SARIF 2.1.0 verified ({len(results)} findings with valid locations).")
           PY
 
-            # 4. Container-compatible hardening pass (sshd_config, file perms, sudoers, TMOUT, umask, banners)
+            # 4. Container-compatible hardening pass (SSH, file perms, sudoers, PAM/pwquality, journald, auditd, TMOUT, umask, banners)
             chmod 0600 /etc/ssh/sshd_config
             chown root:root /etc/ssh/sshd_config
             cat <<EOF >/etc/ssh/sshd_config.d/01-hardening.conf
@@ -136,6 +145,36 @@ jobs:
             echo "Authorized access only." >/etc/issue
             echo "Authorized access only." >/etc/issue.net
 
+            # PAM pwquality + faillock
+            cat <<EOF >/etc/security/pwquality.conf
+          minlen = 14
+          minclass = 4
+          EOF
+            cat <<EOF >/etc/security/faillock.conf
+          deny = 5
+          unlock_time = 900
+          EOF
+
+            # journald + auditd config & rules
+            mkdir -p /etc/systemd/journald.conf.d /etc/audit/rules.d
+            cat <<EOF >/etc/systemd/journald.conf.d/99-manis.conf
+          [Journal]
+          Storage=persistent
+          Compress=yes
+          EOF
+            cat <<EOF >/etc/audit/auditd.conf
+          max_log_file = 32
+          max_log_file_action = keep_logs
+          disk_full_action = halt
+          EOF
+            cat <<EOF >/etc/audit/rules.d/50-hardening.rules
+          -w /etc/sudoers -p wa -k scope
+          -w /etc/passwd -p wa -k identity
+          -w /etc/localtime -p wa -k time-change
+          -a always,exit -F arch=b64 -S init_module -k modules
+          -e 2
+          EOF
+
             # 5. Audit hardened container & run manis diff
             /work/manis audit --format json --output /work/hardened.json || true
             /work/manis diff /work/baseline.json /work/hardened.json --format json --no-fail --output /work/diff.json
@@ -147,7 +186,7 @@ jobs:
           regressions = summary["regressions"]
           fixed = summary["fixed"]
           assert regressions == 0, f"unexpected regressions: {diff}"
-          assert fixed >= 10, f"expected >= 10 fixed rules, got {summary}"
+          assert fixed >= 20, f"expected >= 20 fixed rules, got {summary}"
           print(f"Live Docker diff verified: {fixed} rules fixed, 0 regressions.")
           PY
           '

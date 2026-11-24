@@ -1,0 +1,21 @@
+id = "MAC-003"
+title = "Ensure AppArmor profiles are loaded in enforce or complain mode"
+description = "Verifies that AppArmor profiles are loaded in /sys/kernel/security/apparmor/profiles and operate in enforce or complain mode."
+severity = "high"
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced"]
+artifact_uri = "sys/kernel/security/apparmor/profiles"
+remediation = '''
+Load and enable AppArmor profiles:
+  sudo aa-enforce /etc/apparmor.d/*
+'''
+
+[references]
+cis = ["1.3.1.3"]
+anssi = []
+nist = ["AC-3"]
+
+[check]
+type = "file_content"
+mode = "apparmor_profiles"
+paths = ["/sys/kernel/security/apparmor/profiles"]
+require_enforce = false

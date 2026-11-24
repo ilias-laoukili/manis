@@ -1,0 +1,21 @@
+id = "LOG-007"
+title = "Prevent automatic deletion of audit logs (max_log_file_action=keep_logs)"
+description = "Verifies that /etc/audit/auditd.conf sets max_log_file_action = keep_logs so historical forensic logs are not overwritten."
+severity = "medium"
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced"]
+remediation = '''
+Set in /etc/audit/auditd.conf:
+  max_log_file_action = keep_logs
+'''
+
+[references]
+cis = ["6.2.2.2"]
+anssi = []
+nist = ["AU-4", "AU-11"]
+
+[check]
+type = "file_content"
+mode = "regex"
+match_mode = "any_line"
+paths = ["/etc/audit/auditd.conf"]
+pattern = '^max_log_file_action\s*=\s*keep_logs\b'
