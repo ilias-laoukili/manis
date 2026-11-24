@@ -1,10 +1,20 @@
-# manis
+<div align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/theme/logo-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="docs/theme/logo.svg">
+    <img alt="manis logo" src="docs/theme/logo.svg" width="160">
+  </picture>
 
-[![CI](https://github.com/ilias-laoukili/manis/actions/workflows/ci.yml/badge.svg)](https://github.com/ilias-laoukili/manis/actions/workflows/ci.yml)
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
-[![Release](https://img.shields.io/github/v/release/ilias-laoukili/manis)](https://github.com/ilias-laoukili/manis/releases)
+  <h1>manis</h1>
 
-**Declarative, zero-dependency Linux hardening audit CLI** mapped to **CIS Ubuntu Linux 24.04 LTS Benchmark v1.0.0 (Level 1 Server)**, **ANSSI-BP-028 v2.0**, and **NIST SP 800-53 Rev. 5**.
+  <p>Read-only Linux hardening compliance CLI in safe Rust — CIS Ubuntu 24.04 L1 Server, ANSSI-BP-028 v2.0, and NIST SP 800-53.</p>
+
+  <p>
+    <a href="https://github.com/ilias-laoukili/manis/actions/workflows/ci.yml"><img src="https://github.com/ilias-laoukili/manis/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache--2.0-blue.svg" alt="License: Apache-2.0"></a>
+    <a href="https://github.com/ilias-laoukili/manis/releases"><img src="https://img.shields.io/github/v/release/ilias-laoukili/manis" alt="Release"></a>
+  </p>
+</div>
 
 Named after *Manis* — the pangolin, the only mammal fully armored in protective scales.
 
