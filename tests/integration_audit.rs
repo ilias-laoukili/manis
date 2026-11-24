@@ -105,8 +105,9 @@ fn ubuntu_default_fixture_fails_unhardened_rules_and_reports_expected_actual_rem
             "FAIL rule {} must include actual value",
             res.id
         );
-        assert!(
-            !res.remediation.trim().is_empty(),
+        assert_ne!(
+            res.remediation.trim(),
+            "",
             "FAIL rule {} must include remediation",
             res.id
         );
@@ -155,7 +156,10 @@ fn json_sarif_and_markdown_outputs_are_deterministic_and_sarif_includes_location
     let results = sarif["runs"][0]["results"]
         .as_array()
         .expect("sarif results array");
-    assert!(!results.is_empty());
+    assert!(
+        results.len() >= 25,
+        "expected multiple SARIF findings on ubuntu-default"
+    );
     for item in results {
         let uri = item["locations"][0]["physicalLocation"]["artifactLocation"]["uri"]
             .as_str()

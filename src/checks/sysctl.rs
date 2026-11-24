@@ -239,7 +239,7 @@ mod tests {
 
         let out = evaluate(&spec, &view);
         assert_eq!(out.status, Status::Warn);
-        assert!(!out.details.is_empty());
+        assert_eq!(out.details.len(), 1);
     }
 
     #[test]

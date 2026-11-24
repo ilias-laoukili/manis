@@ -216,6 +216,6 @@ mod tests {
         assert!(reg.rules_for_profile("nonexistent").is_err());
         assert_eq!(reg.rules_for_profile("all").unwrap().len(), 55);
         assert!(reg.rules_for_profile("cis-l1-server").unwrap().len() >= 45);
-        assert!(!reg.rules_for_profile("anssi-minimal").unwrap().is_empty());
+        assert!(reg.rules_for_profile("anssi-minimal").unwrap().len() >= 10);
     }
 }
