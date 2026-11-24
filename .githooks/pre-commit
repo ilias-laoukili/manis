@@ -1,0 +1,25 @@
+#!/bin/sh
+# Checks run by git before each commit: the commit is refused as soon as one of them fails.
+# Activate once per copy of the repository: git config core.hooksPath .githooks
+cd "$(git rev-parse --show-toplevel)" || exit 1
+PATH="$HOME/.cargo/bin:$PATH"
+
+refuse() {
+    echo "pre-commit: commit refused: $1" >&2
+    exit 1
+}
+
+# 1. What is checked is what is committed: no unstaged modification may remain outside the commit.
+git status --porcelain | grep -q '^.[^ ]' \
+    && refuse "some changes are not in the commit (see git status); stage them or set them aside."
+
+# 2. Formatting check.
+cargo fmt --check || refuse "code is not formatted; run 'cargo fmt' and stage the changes."
+
+# 3. Strict lint check (including clippy::pedantic and forbid(unsafe_code)).
+cargo clippy --all-targets -- -D warnings || refuse "cargo clippy reported warnings or errors."
+
+# 4. Full unit and fixture test suite.
+cargo test --quiet || refuse "cargo test failed."
+
+exit 0
