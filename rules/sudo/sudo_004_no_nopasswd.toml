@@ -1,0 +1,19 @@
+id = "SUDO-004"
+title = "Require password authentication for sudo privilege escalation"
+description = "Verifies that /etc/sudoers and /etc/sudoers.d/* do not contain NOPASSWD tags bypassing authentication."
+severity = "high"
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced"]
+remediation = """
+Audit sudoers rules with 'sudo visudo' and remove 'NOPASSWD:' tags so privilege escalation requires user authentication.
+"""
+
+[references]
+cis = ["5.2.4"]
+anssi = []
+nist = ["AC-6", "IA-2"]
+
+[check]
+type = "sudoers"
+mode = "forbid_no_passwd"
+file = "/etc/sudoers"
+include_dir = "/etc/sudoers.d"

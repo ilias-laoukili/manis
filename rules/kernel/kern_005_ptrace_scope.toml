@@ -1,0 +1,24 @@
+id = "KERN-005"
+title = "Restrict ptrace_scope via Yama LSM"
+description = "Verifies that kernel.yama.ptrace_scope is set to 1 or higher so unprivileged processes cannot inspect or attach to unrelated processes."
+severity = "high"
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced"]
+remediation = """
+Set kernel.yama.ptrace_scope in /etc/sysctl.d/99-manis-kernel.conf:
+  kernel.yama.ptrace_scope = 1
+Then run: sudo sysctl --system
+"""
+
+[references]
+cis = ["1.5.2"]
+anssi = ["R9"]
+nist = ["CM-6", "SC-39"]
+
+[check]
+type = "sysctl"
+on_missing = "warn"
+
+[[check.params]]
+key = "kernel.yama.ptrace_scope"
+op = "ge"
+value = "1"

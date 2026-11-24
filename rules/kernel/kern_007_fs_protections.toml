@@ -1,0 +1,42 @@
+id = "KERN-007"
+title = "Enable kernel symlink, hardlink, FIFO, and regular file protections"
+description = "Verifies fs.protected_hardlinks, fs.protected_symlinks, fs.protected_fifos, and fs.protected_regular to mitigate TOCTOU and symlink attacks in world-writable directories."
+severity = "high"
+profiles = ["anssi-intermediary", "anssi-reinforced"]
+remediation = """
+Configure /etc/sysctl.d/99-manis-fs.conf:
+  fs.protected_hardlinks = 1
+  fs.protected_symlinks = 1
+  fs.protected_fifos = 2
+  fs.protected_regular = 2
+Then run: sudo sysctl --system
+"""
+
+[references]
+cis = []
+anssi = ["R9"]
+nist = ["CM-6", "SI-16"]
+
+[check]
+type = "sysctl"
+on_missing = "warn"
+
+[[check.params]]
+key = "fs.protected_hardlinks"
+op = "eq"
+value = "1"
+
+[[check.params]]
+key = "fs.protected_symlinks"
+op = "eq"
+value = "1"
+
+[[check.params]]
+key = "fs.protected_fifos"
+op = "ge"
+value = "1"
+
+[[check.params]]
+key = "fs.protected_regular"
+op = "ge"
+value = "1"

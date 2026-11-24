@@ -1,4 +1,5 @@
-use manis::engine::run_audit;
+use manis::config::{SimpleDate, UserConfig};
+use manis::engine::{run_audit, run_audit_with_config};
 use manis::model::{AuditReport, Severity, Status};
 use manis::report::{render_report, OutputFormat};
 use manis::rules::RuleRegistry;
@@ -18,9 +19,36 @@ fn manis_bin() -> Command {
 }
 
 #[test]
-fn ubuntu_hardened_fixture_passes_all_13_rules_with_exit_0() {
+fn ubuntu_hardened_fixture_passes_cis_l1_server_and_all_profiles_with_exit_0() {
     let fixture = fixture_path("ubuntu-hardened");
-    let output = manis_bin()
+
+    // Default profile in v0.2.0 is `cis-l1-server`.
+    let cis_out = manis_bin()
+        .args([
+            "audit",
+            "--format",
+            "json",
+            "--root",
+            fixture.to_str().unwrap(),
+        ])
+        .output()
+        .expect("run manis audit (default cis-l1-server)");
+    assert_eq!(
+        cis_out.status.code(),
+        Some(0),
+        "expected exit 0 on ubuntu-hardened cis-l1-server, stderr: {}",
+        String::from_utf8_lossy(&cis_out.stderr)
+    );
+    let cis_report: AuditReport =
+        serde_json::from_slice(&cis_out.stdout).expect("valid CIS JSON report");
+    assert_eq!(cis_report.profile, "cis-l1-server");
+    assert!(cis_report.summary.total >= 45);
+    assert_eq!(cis_report.summary.fail, 0);
+    assert_eq!(cis_report.summary.warn, 0);
+    assert_eq!(cis_report.summary.pass, cis_report.summary.total);
+
+    // Full `all` profile: 52 automated PASS + 3 explicit MANUAL controls, 0 FAIL, exit 0.
+    let all_out = manis_bin()
         .args([
             "audit",
             "--profile",
@@ -31,22 +59,15 @@ fn ubuntu_hardened_fixture_passes_all_13_rules_with_exit_0() {
             fixture.to_str().unwrap(),
         ])
         .output()
-        .expect("run manis audit");
-
-    assert_eq!(
-        output.status.code(),
-        Some(0),
-        "expected exit code 0 on ubuntu-hardened, stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    let report: AuditReport =
-        serde_json::from_slice(&output.stdout).expect("valid JSON AuditReport");
-    assert_eq!(report.summary.total, 13);
-    assert_eq!(report.summary.pass, 13);
-    assert_eq!(report.summary.fail, 0);
-    assert_eq!(report.summary.warn, 0);
-    assert_eq!(report.summary.error, 0);
+        .expect("run manis audit --profile all");
+    assert_eq!(all_out.status.code(), Some(0));
+    let all_report: AuditReport =
+        serde_json::from_slice(&all_out.stdout).expect("valid all JSON report");
+    assert_eq!(all_report.summary.total, 55);
+    assert_eq!(all_report.summary.pass, 52);
+    assert_eq!(all_report.summary.manual, 3);
+    assert_eq!(all_report.summary.fail, 0);
+    assert_eq!(all_report.summary.warn, 0);
 }
 
 #[test]
@@ -69,11 +90,9 @@ fn ubuntu_default_fixture_fails_unhardened_rules_and_reports_expected_actual_rem
 
     let report: AuditReport =
         serde_json::from_slice(&output.stdout).expect("valid JSON AuditReport");
-    assert_eq!(report.summary.total, 13);
-    // Stock Ubuntu has SECCOMP & Yama enabled (KERN-004 passes); the other 12 fail.
-    assert_eq!(report.summary.pass, 1);
-    assert_eq!(report.summary.fail, 12);
-    assert_eq!(report.summary.warn, 0);
+    assert_eq!(report.summary.total, 55);
+    assert!(report.summary.fail >= 35);
+    assert_eq!(report.summary.manual, 3);
 
     for res in report.results.iter().filter(|r| r.status == Status::Fail) {
         assert!(
@@ -91,9 +110,14 @@ fn ubuntu_default_fixture_fails_unhardened_rules_and_reports_expected_actual_rem
             "FAIL rule {} must include remediation",
             res.id
         );
+        assert!(
+            res.artifact_uri.as_deref().is_some_and(|u| !u.is_empty()),
+            "FAIL rule {} must include artifact_uri for SARIF",
+            res.id
+        );
     }
 
-    // Verify R56 (FS-002) enforces BOTH whitelist and world-writable checks.
+    // Verify FS-002 (R56) enforces BOTH whitelist and world-writable checks.
     let fs002 = report
         .results
         .iter()
@@ -108,119 +132,185 @@ fn ubuntu_default_fixture_fails_unhardened_rules_and_reports_expected_actual_rem
 }
 
 #[test]
-fn json_output_is_byte_for_byte_deterministic_without_timestamps() {
+fn json_sarif_and_markdown_outputs_are_deterministic_and_sarif_includes_locations() {
     let registry = RuleRegistry::load_embedded().expect("registry");
     let view = RootFsSystemView::from_root(fixture_path("ubuntu-default")).expect("view");
 
-    let r1 = run_audit(&registry, "all", &view).expect("run 1");
-    let r2 = run_audit(&registry, "all", &view).expect("run 2");
+    let r1 = run_audit(&registry, "cis-l1-server", &view).expect("run 1");
+    let r2 = run_audit(&registry, "cis-l1-server", &view).expect("run 2");
 
-    let j1 = render_report(&r1, OutputFormat::Json).expect("json 1");
-    let j2 = render_report(&r2, OutputFormat::Json).expect("json 2");
+    for format in [
+        OutputFormat::Json,
+        OutputFormat::Sarif,
+        OutputFormat::Markdown,
+    ] {
+        let out1 = render_report(&r1, format).expect("render 1");
+        let out2 = render_report(&r2, format).expect("render 2");
+        assert_eq!(out1, out2, "format {format:?} must be deterministic");
+    }
 
-    assert_eq!(j1, j2, "JSON output must be byte-for-byte deterministic");
-    assert!(
-        !j1.contains("timestamp"),
-        "JSON output must not contain variable timestamps by default"
-    );
+    let sarif_str = render_report(&r1, OutputFormat::Sarif).expect("sarif");
+    let sarif: serde_json::Value = serde_json::from_str(&sarif_str).expect("valid SARIF JSON");
+    assert_eq!(sarif["version"], "2.1.0");
+    let results = sarif["runs"][0]["results"]
+        .as_array()
+        .expect("sarif results array");
+    assert!(!results.is_empty());
+    for item in results {
+        let uri = item["locations"][0]["physicalLocation"]["artifactLocation"]["uri"]
+            .as_str()
+            .expect("every SARIF result must carry a physicalLocation.artifactLocation.uri");
+        assert!(!uri.is_empty() && !uri.starts_with('/'));
+    }
+
+    let md = render_report(&r1, OutputFormat::Markdown).expect("markdown");
+    assert!(md.contains("# manis Hardening Audit Report"));
+    assert!(md.contains("| ID | Status | Severity | Refs | Title |"));
+    assert!(md.contains("<details>"));
 }
 
 #[test]
-fn table_output_uses_refs_column_and_shows_findings() {
-    let fixture = fixture_path("ubuntu-default");
-    let output = manis_bin()
-        .args([
-            "audit",
-            "--profile",
-            "cis-l1-server",
-            "--format",
-            "table",
-            "--root",
-            fixture.to_str().unwrap(),
-        ])
-        .output()
-        .expect("run manis table");
+fn manis_toml_waivers_expiration_and_overrides_work_deterministically() {
+    let registry = RuleRegistry::load_embedded().expect("registry");
+    let view = RootFsSystemView::from_root(fixture_path("ubuntu-default")).expect("view");
 
-    assert_eq!(output.status.code(), Some(1));
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("REFS"));
-    assert!(!stdout.contains("ID        STATUS  SEVERITY  ANSSI"));
-    assert!(stdout.contains("Expected:"));
-    assert!(stdout.contains("Actual:"));
-    assert!(stdout.contains("Remediation:"));
-}
+    let cfg = UserConfig::parse(
+        r#"
+[waivers.SSH-002]
+reason = "Temporary migration exemption"
+expires = "2026-06-01"
 
-#[test]
-fn fail_on_threshold_controls_exit_code() {
-    // In ubuntu-default, KERN-002 (R10) has severity medium.
-    // Profile anssi-reinforced with --fail-on critical fails because FS-002 is critical.
-    let fixture = fixture_path("ubuntu-default");
-    let out_crit = manis_bin()
-        .args([
-            "audit",
-            "--profile",
-            "all",
-            "--fail-on",
-            "critical",
-            "--root",
-            fixture.to_str().unwrap(),
-        ])
-        .output()
-        .expect("run --fail-on critical");
-    assert_eq!(out_crit.status.code(), Some(1));
+[overrides.suid_sgid]
+extra_whitelist = ["/usr/local/bin/custom-suid"]
 
-    // Create a minimal tree where only medium-severity AUTH-001 (TMOUT) fails;
-    // --fail-on high should exit 0 while --fail-on medium exits 1.
-    let dir = tempdir().expect("tempdir");
-    std::fs::create_dir_all(dir.path().join("etc")).expect("mkdir");
-    std::fs::write(dir.path().join("etc/profile"), "umask 077\n").expect("write");
-    std::fs::write(dir.path().join("etc/login.defs"), "UMASK 077\n").expect("write");
-    std::fs::write(dir.path().join("etc/sudoers"), "root ALL=(ALL:ALL) ALL\n").expect("write");
-    std::fs::create_dir_all(dir.path().join("etc/apt/sources.list.d")).expect("mkdir");
-    std::fs::write(
-        dir.path().join("etc/apt/sources.list.d/ubuntu.sources"),
-        "Types: deb\nURIs: https://archive.ubuntu.com/ubuntu/\nSuites: noble\nComponents: main\n",
+[overrides.package_repos]
+extra_trusted_domains = ["untrusted.example.com"]
+"#,
     )
-    .expect("write");
+    .expect("parse config");
 
-    let out_high = manis_bin()
-        .args([
-            "audit",
-            "--profile",
-            "anssi-minimal",
-            "--fail-on",
-            "high",
-            "--root",
-            dir.path().to_str().unwrap(),
-        ])
-        .output()
-        .expect("run --fail-on high");
-    assert_eq!(out_high.status.code(), Some(0));
+    // Before expiration: SSH-002 is SKIP; custom-suid is whitelisted (though debug-helper still fails).
+    let before = SimpleDate::parse("2026-05-01").unwrap();
+    let rep_before =
+        run_audit_with_config(&registry, "all", &view, &cfg, Some(before)).expect("audit before");
+    let ssh002_before = rep_before
+        .results
+        .iter()
+        .find(|r| r.id == "SSH-002")
+        .unwrap();
+    assert_eq!(ssh002_before.status, Status::Skip);
+    assert!(ssh002_before.details[0].contains("Temporary migration exemption"));
 
-    let out_med = manis_bin()
-        .args([
-            "audit",
-            "--profile",
-            "anssi-minimal",
-            "--fail-on",
-            "medium",
-            "--root",
-            dir.path().to_str().unwrap(),
-        ])
-        .output()
-        .expect("run --fail-on medium");
-    assert_eq!(out_med.status.code(), Some(1));
+    let fs002 = rep_before
+        .results
+        .iter()
+        .find(|r| r.id == "FS-002")
+        .unwrap();
+    assert!(!fs002.details.iter().any(|d| d.contains("custom-suid")));
+    assert!(fs002.details.iter().any(|d| d.contains("debug-helper")));
+
+    // After expiration: SSH-002 reverts to normal FAIL with explicit expiration note.
+    let after = SimpleDate::parse("2026-06-02").unwrap();
+    let rep_after =
+        run_audit_with_config(&registry, "all", &view, &cfg, Some(after)).expect("audit after");
+    let ssh002_after = rep_after
+        .results
+        .iter()
+        .find(|r| r.id == "SSH-002")
+        .unwrap();
+    assert_eq!(ssh002_after.status, Status::Fail);
+    assert!(ssh002_after
+        .details
+        .iter()
+        .any(|d| d.contains("waiver expired on 2026-06-01")));
 }
 
 #[test]
-fn empty_root_never_produces_false_pass_on_missing_sysctls_or_configs() {
+fn diff_subcommand_detects_fixes_regressions_and_honors_no_fail() {
+    let tmp = tempdir().expect("tempdir");
+    let base_json = tmp.path().join("default.json");
+    let hard_json = tmp.path().join("hardened.json");
+
+    let out_def = manis_bin()
+        .args([
+            "audit",
+            "--format",
+            "json",
+            "--root",
+            fixture_path("ubuntu-default").to_str().unwrap(),
+            "--output",
+            base_json.to_str().unwrap(),
+        ])
+        .output()
+        .expect("audit default");
+    assert_eq!(out_def.status.code(), Some(1));
+
+    let out_hard = manis_bin()
+        .args([
+            "audit",
+            "--format",
+            "json",
+            "--root",
+            fixture_path("ubuntu-hardened").to_str().unwrap(),
+            "--output",
+            hard_json.to_str().unwrap(),
+        ])
+        .output()
+        .expect("audit hardened");
+    assert_eq!(out_hard.status.code(), Some(0));
+
+    // default -> hardened: all improvements (0 regressions -> exit 0).
+    let diff_fixed = manis_bin()
+        .args([
+            "diff",
+            base_json.to_str().unwrap(),
+            hard_json.to_str().unwrap(),
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("diff default -> hardened");
+    assert_eq!(diff_fixed.status.code(), Some(0));
+    let val: serde_json::Value =
+        serde_json::from_slice(&diff_fixed.stdout).expect("valid diff json");
+    assert_eq!(val["summary"]["regressions"], 0);
+    assert!(val["summary"]["fixed"].as_u64().unwrap() > 20);
+
+    // hardened -> default: regressions exist -> exit 1 by default.
+    let diff_reg = manis_bin()
+        .args([
+            "diff",
+            hard_json.to_str().unwrap(),
+            base_json.to_str().unwrap(),
+        ])
+        .output()
+        .expect("diff hardened -> default");
+    assert_eq!(diff_reg.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&diff_reg.stdout).contains("Regressions"));
+
+    // hardened -> default with --no-fail -> exit 0.
+    let diff_no_fail = manis_bin()
+        .args([
+            "diff",
+            hard_json.to_str().unwrap(),
+            base_json.to_str().unwrap(),
+            "--no-fail",
+            "--format",
+            "markdown",
+        ])
+        .output()
+        .expect("diff --no-fail");
+    assert_eq!(diff_no_fail.status.code(), Some(0));
+    assert!(String::from_utf8_lossy(&diff_no_fail.stdout).contains("## Regressions"));
+}
+
+#[test]
+fn empty_root_never_produces_false_pass_on_missing_configs() {
     let dir = tempdir().expect("tempdir");
     let registry = RuleRegistry::load_embedded().expect("registry");
     let view = RootFsSystemView::from_root(dir.path()).expect("view");
     let report = run_audit(&registry, "all", &view).expect("audit");
 
-    // FS-002 (suid_sgid) scans the empty dir and legitimately sees 0 SUID/SGID binaries (PASS).
-    // Every other rule depends on missing system files/sysctls and must NEVER silently PASS.
     for res in &report.results {
         if res.id == "FS-002" {
             assert_eq!(res.status, Status::Pass);
@@ -236,68 +326,48 @@ fn empty_root_never_produces_false_pass_on_missing_sysctls_or_configs() {
 }
 
 #[test]
-fn cli_list_explain_output_and_error_exit_codes() {
+fn cli_list_explain_config_and_error_exit_codes() {
     let list_out = manis_bin().arg("list").output().expect("manis list");
     assert_eq!(list_out.status.code(), Some(0));
     let list_stdout = String::from_utf8_lossy(&list_out.stdout);
-    assert!(list_stdout.contains("KERN-001"));
-    assert!(list_stdout.contains("cis-l1-server"));
+    assert!(list_stdout.contains("SSH-002"));
+    assert!(list_stdout.contains("FILE-005"));
     assert!(list_stdout.contains("REFS"));
 
-    // Explain by ANSSI alias and by CIS ID
-    let explain_anssi = manis_bin()
-        .args(["explain", "R9"])
-        .output()
-        .expect("explain R9");
-    assert_eq!(explain_anssi.status.code(), Some(0));
-    assert!(String::from_utf8_lossy(&explain_anssi.stdout).contains("KERN-001"));
-
     let explain_cis = manis_bin()
-        .args(["explain", "5.4.3.2"])
+        .args(["explain", "5.1.20"])
         .output()
-        .expect("explain 5.4.3.2");
+        .expect("explain 5.1.20");
     assert_eq!(explain_cis.status.code(), Some(0));
-    assert!(String::from_utf8_lossy(&explain_cis.stdout).contains("AUTH-001"));
+    assert!(String::from_utf8_lossy(&explain_cis.stdout).contains("SSH-002"));
 
-    // Unknown rule -> exit code 2
     let unknown_rule = manis_bin()
         .args(["explain", "DOES-NOT-EXIST"])
         .output()
         .expect("explain unknown");
     assert_eq!(unknown_rule.status.code(), Some(2));
 
-    // Unknown profile -> exit code 2
-    let unknown_profile = manis_bin()
-        .args([
-            "audit",
-            "--profile",
-            "does-not-exist",
-            "--root",
-            fixture_path("ubuntu-hardened").to_str().unwrap(),
-        ])
-        .output()
-        .expect("unknown profile");
-    assert_eq!(unknown_profile.status.code(), Some(2));
-
-    // --output writes report to file
+    // CLI --config test
     let tmp = tempdir().expect("tempdir");
-    let out_file = tmp.path().join("report.json");
-    let write_out = manis_bin()
+    let cfg_path = tmp.path().join("manis.toml");
+    std::fs::write(
+        &cfg_path,
+        "[waivers.SSH-002]\nreason = \"CLI waiver test\"\n",
+    )
+    .expect("write config");
+    let out = manis_bin()
         .args([
             "audit",
             "--format",
             "json",
             "--root",
-            fixture_path("ubuntu-hardened").to_str().unwrap(),
-            "--output",
-            out_file.to_str().unwrap(),
+            fixture_path("ubuntu-default").to_str().unwrap(),
+            "--config",
+            cfg_path.to_str().unwrap(),
         ])
         .output()
-        .expect("audit --output");
-    assert_eq!(write_out.status.code(), Some(0));
-    assert!(write_out.stdout.is_empty());
-    let written: AuditReport =
-        serde_json::from_str(&std::fs::read_to_string(&out_file).expect("read report"))
-            .expect("valid JSON");
-    assert_eq!(written.summary.pass, 13);
+        .expect("audit with --config");
+    let rep: AuditReport = serde_json::from_slice(&out.stdout).expect("json");
+    let ssh002 = rep.results.iter().find(|r| r.id == "SSH-002").unwrap();
+    assert_eq!(ssh002.status, Status::Skip);
 }

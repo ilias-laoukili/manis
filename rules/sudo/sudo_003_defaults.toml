@@ -1,0 +1,25 @@
+id = "SUDO-003"
+title = "Enforce sudo use_pty, logfile, and authentication timeout Defaults"
+description = "Verifies that sudoers globally configures Defaults use_pty, Defaults logfile, and Defaults timestamp_timeout <= 15 minutes."
+severity = "medium"
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced"]
+remediation = """
+Use 'sudo visudo' to add:
+  Defaults use_pty
+  Defaults logfile="/var/log/sudo.log"
+  Defaults timestamp_timeout=15
+"""
+
+[references]
+cis = ["5.2.2", "5.2.3", "5.2.6"]
+anssi = []
+nist = ["AU-12", "CM-6"]
+
+[check]
+type = "sudoers"
+mode = "require_defaults"
+file = "/etc/sudoers"
+include_dir = "/etc/sudoers.d"
+required_defaults = ["use_pty"]
+required_kv_defaults = ["logfile"]
+max_timestamp_timeout = 15

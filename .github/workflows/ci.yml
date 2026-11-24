@@ -41,3 +41,113 @@ jobs:
 
       - name: Run tests
         run: cargo test --all-targets
+
+  docker-integration:
+    name: Live Ubuntu 24.04 Docker Integration
+    runs-on: ubuntu-24.04
+    needs: check
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo registry and target
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Run live non-root, root, hardened pass, SARIF & diff inside ubuntu:24.04
+        run: |
+          mkdir -p /tmp/manis-ci
+          cp target/release/manis /tmp/manis-ci/manis
+          chmod 0755 /tmp/manis-ci/manis
+
+          docker run --rm -v /tmp/manis-ci:/work ubuntu:24.04 bash -euxo pipefail -c '
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update -qq
+            apt-get install -y -qq --no-install-recommends sudo openssh-server python3 >/dev/null
+
+            # 1. Non-root live run: must report WARN (never PASS) on unreadable /etc/shadow & /etc/sudoers
+            su -s /bin/bash nobody -c "/work/manis audit --format json --output /tmp/nonroot.json || true"
+            python3 - <<PY
+          import json
+          rep = json.load(open("/tmp/nonroot.json"))
+          by_id = {r["id"]: r["status"] for r in rep["results"]}
+          auth006 = by_id["AUTH-006"]
+          sudo003 = by_id["SUDO-003"]
+          assert auth006 == "WARN", f"expected WARN on /etc/shadow as nobody, got {auth006}"
+          assert sudo003 == "WARN", f"expected WARN on /etc/sudoers as nobody, got {sudo003}"
+          print("Non-root live WARN checks passed.")
+          PY
+
+            # 2. Root live baseline on raw ubuntu:24.04
+            /work/manis audit --format json --output /work/baseline.json || true
+
+            # 3. Validate SARIF 2.1.0 output structure & mandatory locations
+            /work/manis audit --format sarif --output /work/baseline.sarif || true
+            python3 - <<PY
+          import json
+          sarif = json.load(open("/work/baseline.sarif"))
+          assert sarif["version"] == "2.1.0"
+          results = sarif["runs"][0]["results"]
+          assert len(results) > 0
+          for r in results:
+              uri = r["locations"][0]["physicalLocation"]["artifactLocation"]["uri"]
+              assert uri and not uri.startswith("/"), f"bad SARIF URI: {uri}"
+          print(f"SARIF 2.1.0 verified ({len(results)} findings with valid locations).")
+          PY
+
+            # 4. Container-compatible hardening pass (sshd_config, file perms, sudoers, TMOUT, umask, banners)
+            chmod 0600 /etc/ssh/sshd_config
+            chown root:root /etc/ssh/sshd_config
+            cat <<EOF >/etc/ssh/sshd_config.d/01-hardening.conf
+          PermitRootLogin no
+          PermitEmptyPasswords no
+          MaxAuthTries 4
+          LoginGraceTime 60
+          ClientAliveInterval 300
+          ClientAliveCountMax 0
+          LogLevel VERBOSE
+          IgnoreRhosts yes
+          HostbasedAuthentication no
+          GSSAPIAuthentication no
+          PermitUserEnvironment no
+          UsePAM yes
+          DisableForwarding yes
+          Banner /etc/issue.net
+          Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com
+          MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com
+          KexAlgorithms curve25519-sha256,diffie-hellman-group16-sha512
+          EOF
+            chmod 0640 /etc/shadow
+            chmod 0644 /etc/passwd /etc/group
+            cat <<EOF >/etc/sudoers.d/99-hardening
+          Defaults use_pty
+          Defaults logfile="/var/log/sudo.log"
+          Defaults timestamp_timeout=15
+          EOF
+            chmod 0440 /etc/sudoers.d/99-hardening
+            printf "TMOUT=600\nreadonly TMOUT\nexport TMOUT\n" >/etc/profile.d/99-tmout.sh
+            sed -i "s/^UMASK.*/UMASK 077/" /etc/login.defs
+            echo "Authorized access only." >/etc/issue
+            echo "Authorized access only." >/etc/issue.net
+
+            # 5. Audit hardened container & run manis diff
+            /work/manis audit --format json --output /work/hardened.json || true
+            /work/manis diff /work/baseline.json /work/hardened.json --format json --no-fail --output /work/diff.json
+            /work/manis diff /work/baseline.json /work/hardened.json --no-fail
+            python3 - <<PY
+          import json
+          diff = json.load(open("/work/diff.json"))
+          summary = diff["summary"]
+          regressions = summary["regressions"]
+          fixed = summary["fixed"]
+          assert regressions == 0, f"unexpected regressions: {diff}"
+          assert fixed >= 10, f"expected >= 10 fixed rules, got {summary}"
+          print(f"Live Docker diff verified: {fixed} rules fixed, 0 regressions.")
+          PY
+          '

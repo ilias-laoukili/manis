@@ -1,13 +1,17 @@
 //! Check primitive implementations and evaluation dispatch.
 
 pub mod file_content;
+pub mod file_meta;
 pub mod kernel_config;
+pub mod manual;
 pub mod mount_options;
 pub mod package_repos;
+pub mod sshd_config;
 pub mod sudoers;
 pub mod suid_sgid;
 pub mod sysctl;
 
+use crate::config::OverridesConfig;
 use crate::model::{RuleResult, Status};
 use crate::rules::schema::{CheckSpec, RuleSpec};
 use crate::sys::SystemView;
@@ -67,16 +71,47 @@ impl CheckOutcome {
     }
 }
 
-/// Evaluates a single [`RuleSpec`] against `view` and constructs a complete [`RuleResult`].
-pub fn evaluate_rule(rule: &RuleSpec, view: &dyn SystemView) -> RuleResult {
+/// Evaluates a single [`RuleSpec`] against `view` using optional [`OverridesConfig`].
+pub fn evaluate_rule(
+    rule: &RuleSpec,
+    view: &dyn SystemView,
+    overrides: &OverridesConfig,
+) -> RuleResult {
     let outcome = match &rule.check {
         CheckSpec::Sysctl(spec) => sysctl::evaluate(spec, view),
         CheckSpec::KernelConfig(spec) => kernel_config::evaluate(spec, view),
         CheckSpec::MountOptions(spec) => mount_options::evaluate(spec, view),
+        CheckSpec::SshdConfig(spec) => sshd_config::evaluate(spec, view),
+        CheckSpec::FileMeta(spec) => file_meta::evaluate(spec, view),
         CheckSpec::FileContent(spec) => file_content::evaluate(spec, view),
         CheckSpec::Sudoers(spec) => sudoers::evaluate(spec, view),
-        CheckSpec::SuidSgid(spec) => suid_sgid::evaluate(spec, view),
-        CheckSpec::PackageRepos(spec) => package_repos::evaluate(spec, view),
+        CheckSpec::SuidSgid(spec) => {
+            if overrides.suid_sgid.extra_whitelist.is_empty() {
+                suid_sgid::evaluate(spec, view)
+            } else {
+                let mut merged = spec.clone();
+                merged
+                    .whitelist
+                    .extend(overrides.suid_sgid.extra_whitelist.iter().cloned());
+                suid_sgid::evaluate(&merged, view)
+            }
+        }
+        CheckSpec::PackageRepos(spec) => {
+            if overrides.package_repos.extra_trusted_domains.is_empty() {
+                package_repos::evaluate(spec, view)
+            } else {
+                let mut merged = spec.clone();
+                merged.trusted_domains.extend(
+                    overrides
+                        .package_repos
+                        .extra_trusted_domains
+                        .iter()
+                        .cloned(),
+                );
+                package_repos::evaluate(&merged, view)
+            }
+        }
+        CheckSpec::Manual(spec) => manual::evaluate(spec),
     };
 
     RuleResult {
@@ -85,6 +120,7 @@ pub fn evaluate_rule(rule: &RuleSpec, view: &dyn SystemView) -> RuleResult {
         status: outcome.status,
         severity: rule.severity,
         references: rule.references.clone(),
+        artifact_uri: Some(rule.resolved_artifact_uri()),
         expected: outcome.expected,
         actual: outcome.actual,
         details: outcome.details,

@@ -1,0 +1,23 @@
+id = "FS-003"
+title = "Disable unused filesystem kernel module (cramfs)"
+description = "Verifies that the legacy/uncommon 'cramfs' filesystem kernel module is disabled via /etc/modprobe.d/*.conf to reduce kernel attack surface."
+severity = "low"
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced"]
+artifact_uri = "etc/modprobe.d/cis-filesystems.conf"
+remediation = """
+Add the following lines to /etc/modprobe.d/cis-filesystems.conf:
+  install cramfs /bin/false
+  blacklist cramfs
+"""
+
+[references]
+cis = ["1.1.1.1"]
+anssi = []
+nist = ["CM-7"]
+
+[check]
+type = "file_content"
+mode = "regex"
+match_mode = "any_line"
+paths = ["/etc/modprobe.d/*.conf"]
+pattern = "^(install\\s+cramfs\\s+(/bin/true|/bin/false|/usr/bin/true|/usr/bin/false)|blacklist\\s+cramfs\\b)"

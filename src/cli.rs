@@ -1,7 +1,7 @@
 //! Command-line interface definitions (`clap` derive).
 
 use crate::model::Severity;
-use crate::report::OutputFormat;
+use crate::report::{DiffFormat, OutputFormat};
 use clap::{Args, Parser, Subcommand};
 use std::path::PathBuf;
 
@@ -22,13 +22,15 @@ pub enum Command {
     List(ListArgs),
     /// Show benchmark references, description, and remediation for a rule.
     Explain(ExplainArgs),
+    /// Compare two JSON audit reports for hardening drift.
+    Diff(DiffArgs),
 }
 
 #[derive(Debug, Args)]
 pub struct AuditArgs {
-    /// Compliance profile to evaluate (e.g. all, cis-l1-server, anssi-minimal,
+    /// Compliance profile to evaluate (cis-l1-server, all, anssi-minimal,
     /// anssi-intermediary, anssi-reinforced).
-    #[arg(long, default_value = "all")]
+    #[arg(long, default_value = "cis-l1-server")]
     pub profile: String,
 
     /// Output format for the audit report.
@@ -42,6 +44,10 @@ pub struct AuditArgs {
     /// Alternate filesystem root directory for offline or fixture auditing.
     #[arg(long)]
     pub root: Option<PathBuf>,
+
+    /// Optional user configuration file (`manis.toml`) for waivers and overrides.
+    #[arg(long)]
+    pub config: Option<PathBuf>,
 
     /// Write the report to a file instead of standard output.
     #[arg(long)]
@@ -57,6 +63,27 @@ pub struct ListArgs {
 
 #[derive(Debug, Args)]
 pub struct ExplainArgs {
-    /// Canonical rule ID (e.g. KERN-001), ANSSI alias (e.g. R9), or CIS ID (e.g. 5.4.3.2).
+    /// Canonical rule ID (e.g. SSH-002), ANSSI alias (e.g. R9), or CIS ID (e.g. 5.1.20).
     pub rule_id: String,
+}
+
+#[derive(Debug, Args)]
+pub struct DiffArgs {
+    /// Path to the baseline JSON audit report.
+    pub baseline: PathBuf,
+
+    /// Path to the current JSON audit report.
+    pub current: PathBuf,
+
+    /// Output format for the drift report.
+    #[arg(long, value_enum, default_value_t = DiffFormat::Table)]
+    pub format: DiffFormat,
+
+    /// Exit with status 0 even when hardening regressions are detected.
+    #[arg(long)]
+    pub no_fail: bool,
+
+    /// Write the diff report to a file instead of standard output.
+    #[arg(long)]
+    pub output: Option<PathBuf>,
 }

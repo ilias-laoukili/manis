@@ -1,0 +1,23 @@
+id = "FILE-005"
+title = "Restrict permissions and ownership on /etc/shadow"
+description = "Verifies that /etc/shadow is owned by root (allowed GIDs [0, 42]) with permissions no more permissive than 0640."
+severity = "critical"
+profiles = ["cis-l1-server", "anssi-minimal", "anssi-intermediary", "anssi-reinforced"]
+remediation = """
+Enforce ownership and restrictive permissions on /etc/shadow:
+  sudo chown root:shadow /etc/shadow
+  sudo chmod 0640 /etc/shadow
+"""
+
+[references]
+cis = ["7.1.5"]
+anssi = []
+nist = ["AC-6"]
+
+[check]
+type = "file_meta"
+path = "/etc/shadow"
+max_mode = "0640"
+expected_uid = 0
+allowed_gids = [0, 42]
+on_missing = "warn"

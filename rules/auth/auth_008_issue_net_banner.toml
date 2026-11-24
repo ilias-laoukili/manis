@@ -1,0 +1,19 @@
+id = "AUTH-008"
+title = "Configure remote login warning banner (/etc/issue.net)"
+description = 'Verifies that /etc/issue.net contains a legal warning banner and does not leak OS details via escape sequences (\m, \r, \s, \v).'
+severity = "low"
+profiles = ["cis-l1-server"]
+remediation = '''
+Write a concise legal notice to /etc/issue.net without \m, \r, \s, or \v escapes:
+  echo 'Authorized uses only. All activity may be monitored and reported.' | sudo tee /etc/issue.net
+'''
+
+[references]
+cis = ["1.6.3"]
+anssi = []
+nist = ["AC-8"]
+
+[check]
+type = "file_content"
+mode = "banner"
+paths = ["/etc/issue.net"]

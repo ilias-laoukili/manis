@@ -1,6 +1,6 @@
 [package]
 name = "manis"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "Declarative, zero-dependency Linux hardening audit CLI mapped to CIS Benchmarks, ANSSI-BP-028, and NIST SP 800-53."
 license = "Apache-2.0"

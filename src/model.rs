@@ -138,6 +138,9 @@ pub struct RuleResult {
     pub status: Status,
     pub severity: Severity,
     pub references: BenchmarkRefs,
+    /// Relative target artifact path inspected by this rule (used by SARIF 2.1.0 locations).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artifact_uri: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub expected: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

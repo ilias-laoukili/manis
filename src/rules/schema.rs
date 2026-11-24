@@ -27,6 +27,9 @@ pub struct RuleSpec {
     #[serde(default)]
     pub references: BenchmarkRefs,
     pub remediation: String,
+    /// Optional explicit relative artifact path for SARIF 2.1.0 locations.
+    #[serde(default)]
+    pub artifact_uri: Option<String>,
     pub check: CheckSpec,
 }
 
@@ -58,6 +61,18 @@ impl RuleSpec {
         }
         false
     }
+
+    /// Returns a clean, deterministic relative URI representing the system artifact inspected
+    /// by this rule (used for SARIF 2.1.0 `physicalLocation.artifactLocation.uri`).
+    pub fn resolved_artifact_uri(&self) -> String {
+        if let Some(ref explicit) = self.artifact_uri {
+            let trimmed = explicit.trim().trim_start_matches('/');
+            if !trimmed.is_empty() {
+                return trimmed.to_string();
+            }
+        }
+        self.check.default_artifact_uri()
+    }
 }
 
 /// Tagged union of all supported declarative check primitives.
@@ -67,10 +82,42 @@ pub enum CheckSpec {
     Sysctl(SysctlCheck),
     KernelConfig(KernelConfigCheck),
     MountOptions(MountOptionsCheck),
+    SshdConfig(SshdConfigCheck),
+    FileMeta(FileMetaCheck),
     FileContent(FileContentCheck),
     Sudoers(SudoersCheck),
     SuidSgid(SuidSgidCheck),
     PackageRepos(PackageReposCheck),
+    Manual(ManualCheck),
+}
+
+impl CheckSpec {
+    /// Derives a default relative artifact URI from the check specification.
+    pub fn default_artifact_uri(&self) -> String {
+        match self {
+            Self::Sysctl(s) => s.params.first().map_or_else(
+                || "etc/sysctl.conf".to_string(),
+                |p| format!("proc/sys/{}", p.key.replace('.', "/")),
+            ),
+            Self::KernelConfig(_) => "boot/config".to_string(),
+            Self::MountOptions(_) => "proc/mounts".to_string(),
+            Self::SshdConfig(s) => s.file.trim_start_matches('/').to_string(),
+            Self::FileMeta(s) => s.path.trim_start_matches('/').to_string(),
+            Self::FileContent(s) => s
+                .strict_paths
+                .first()
+                .or_else(|| s.paths.first())
+                .or_else(|| s.pam_paths.first())
+                .map_or_else(
+                    || "etc".to_string(),
+                    |p| p.trim_start_matches('/').replace('*', "conf"),
+                ),
+            Self::Sudoers(s) => s.file.trim_start_matches('/').to_string(),
+            Self::SuidSgid(_) => "usr/bin".to_string(),
+            Self::PackageRepos(_) => "etc/apt/sources.list".to_string(),
+            Self::Manual(_) => "system/manual-control".to_string(),
+        }
+    }
 }
 
 /// Behavior when a checked parameter is absent or unreadable.
@@ -82,6 +129,19 @@ pub enum MissingPolicy {
     Warn,
     /// Report `FAIL`.
     Fail,
+}
+
+/// Missing-file policy for `file_meta` checks (allows `skip` for optional backup files).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FileMetaMissingPolicy {
+    /// Report `WARN` (default).
+    #[default]
+    Warn,
+    /// Report `FAIL`.
+    Fail,
+    /// Report `SKIP` when an optional file (e.g., `/etc/shadow-`) does not exist.
+    Skip,
 }
 
 /// Comparison operator for `sysctl` parameters.
@@ -145,8 +205,7 @@ pub struct MountSpec {
     /// Mount options that must all be present.
     #[serde(default)]
     pub required_options: Vec<String>,
-    /// Groups of alternative options where at least one option from each group must be present
-    /// (e.g. `[["hidepid=1", "hidepid=2", "hidepid=invisible", "hidepid=ptraceable"]]`).
+    /// Groups of alternative options where at least one option from each group must be present.
     #[serde(default)]
     pub any_of_options: Vec<Vec<String>>,
 }
@@ -157,6 +216,63 @@ pub struct MountOptionsCheck {
     pub mounts: Vec<MountSpec>,
 }
 
+/// Comparison operator for `sshd_config` directives.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SshdOp {
+    /// Case-insensitive exact value match.
+    Eq,
+    /// Integer `<= value` (and `>= min_value` if specified).
+    Le,
+    /// Integer `>= value`.
+    Ge,
+    /// Case-insensitive membership in `values`.
+    In,
+    /// Case-insensitive exclusion from `values`.
+    NotIn,
+    /// Directive must be present and non-empty (and not `"none"`).
+    Present,
+    /// Comma-separated list where every algorithm must belong to `values`.
+    SubsetOf,
+}
+
+/// Single OpenSSH directive assertion.
+#[derive(Debug, Clone, Deserialize)]
+pub struct SshdParam {
+    pub key: String,
+    pub op: SshdOp,
+    #[serde(default)]
+    pub value: Option<String>,
+    #[serde(default)]
+    pub min_value: Option<i64>,
+    #[serde(default)]
+    pub values: Vec<String>,
+}
+
+/// Declarative `sshd_config` check primitive (OpenSSH first-match-wins with `Include` support).
+#[derive(Debug, Clone, Deserialize)]
+pub struct SshdConfigCheck {
+    #[serde(default = "default_sshd_config_file")]
+    pub file: String,
+    pub params: Vec<SshdParam>,
+}
+
+/// Declarative `file_meta` check primitive for permissions and ownership.
+#[derive(Debug, Clone, Deserialize)]
+pub struct FileMetaCheck {
+    pub path: String,
+    /// Maximum allowed octal permission mask (e.g. `"0644"`, `"0640"`, `"0600"`, `"0700"`).
+    pub max_mode: String,
+    /// Required owner UID (default `0` = root).
+    #[serde(default)]
+    pub expected_uid: u32,
+    /// Allowed owner GIDs (default `[0]` = root).
+    #[serde(default = "default_root_gids")]
+    pub allowed_gids: Vec<u32>,
+    #[serde(default)]
+    pub on_missing: FileMetaMissingPolicy,
+}
+
 /// Evaluation mode for `file_content`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -164,6 +280,10 @@ pub enum FileContentMode {
     ShellTimeout,
     Umask,
     Regex,
+    KeyValueBound,
+    PasswdUidZero,
+    ShadowEmptyPasswords,
+    Banner,
 }
 
 /// Regex matching mode when `file_content.mode == "regex"`.
@@ -209,6 +329,15 @@ pub struct FileContentCheck {
     /// Matching mode for `regex` mode.
     #[serde(default)]
     pub match_mode: RegexMatchMode,
+    /// Directive key for `key_value_bound` mode (e.g. `PASS_MAX_DAYS`).
+    #[serde(default)]
+    pub key: Option<String>,
+    /// Inclusive lower bound for `key_value_bound`.
+    #[serde(default)]
+    pub min: Option<i64>,
+    /// Inclusive upper bound for `key_value_bound`.
+    #[serde(default)]
+    pub max: Option<i64>,
 }
 
 /// Evaluation mode for `sudoers`.
@@ -217,6 +346,9 @@ pub struct FileContentCheck {
 pub enum SudoersMode {
     ForbidBroadRootTargets,
     ForbidCommandNegations,
+    RequireDefaults,
+    ForbidNoPasswd,
+    ForbidNoAuthenticate,
 }
 
 /// Declarative `sudoers` check primitive.
@@ -230,6 +362,15 @@ pub struct SudoersCheck {
     /// Principals intentionally exempted from broad-root-target checks (e.g. `["root"]`).
     #[serde(default)]
     pub ignore_users: Vec<String>,
+    /// Boolean Defaults flags that must be enabled (e.g. `["use_pty"]`) in `require_defaults` mode.
+    #[serde(default)]
+    pub required_defaults: Vec<String>,
+    /// Key-value Defaults that must be assigned (e.g. `["logfile"]`) in `require_defaults` mode.
+    #[serde(default)]
+    pub required_kv_defaults: Vec<String>,
+    /// Maximum allowed `timestamp_timeout` in minutes when checked in `require_defaults` mode.
+    #[serde(default)]
+    pub max_timestamp_timeout: Option<i64>,
 }
 
 /// Declarative `suid_sgid` check primitive.
@@ -253,6 +394,12 @@ pub struct PackageReposCheck {
     pub check_gpg: bool,
 }
 
+/// Explicit non-automatable benchmark control.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ManualCheck {
+    pub verification_steps: Vec<String>,
+}
+
 const fn default_true() -> bool {
     true
 }
@@ -263,6 +410,14 @@ fn default_tmout_var() -> String {
 
 const fn default_max_timeout() -> u64 {
     600
+}
+
+fn default_sshd_config_file() -> String {
+    "/etc/ssh/sshd_config".to_string()
+}
+
+fn default_root_gids() -> Vec<u32> {
+    vec![0]
 }
 
 fn default_sudoers_file() -> String {

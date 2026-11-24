@@ -1,0 +1,23 @@
+id = "FILE-002"
+title = "Restrict permissions and ownership on /etc/passwd-"
+description = "Verifies that /etc/passwd- is owned by root (allowed GIDs [0]) with permissions no more permissive than 0644."
+severity = "medium"
+profiles = ["cis-l1-server", "anssi-minimal", "anssi-intermediary", "anssi-reinforced"]
+remediation = """
+Enforce ownership and restrictive permissions on /etc/passwd-:
+  sudo chown root:root /etc/passwd-
+  sudo chmod 0644 /etc/passwd-
+"""
+
+[references]
+cis = ["7.1.2"]
+anssi = []
+nist = ["AC-6"]
+
+[check]
+type = "file_meta"
+path = "/etc/passwd-"
+max_mode = "0644"
+expected_uid = 0
+allowed_gids = [0]
+on_missing = "skip"

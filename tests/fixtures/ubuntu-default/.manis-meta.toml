@@ -13,3 +13,38 @@ gid = 0
 mode = "4777"
 uid = 0
 gid = 0
+
+[files."/etc/passwd"]
+mode = "0644"
+uid = 0
+gid = 0
+
+[files."/etc/group"]
+mode = "0644"
+uid = 0
+gid = 0
+
+[files."/etc/shadow"]
+mode = "0644"
+uid = 0
+gid = 42
+
+[files."/etc/gshadow"]
+mode = "0640"
+uid = 0
+gid = 42
+
+[files."/etc/ssh/sshd_config"]
+mode = "0644"
+uid = 0
+gid = 0
+
+[files."/etc/crontab"]
+mode = "0644"
+uid = 0
+gid = 0
+
+[files."/etc/cron.d"]
+mode = "0755"
+uid = 0
+gid = 0

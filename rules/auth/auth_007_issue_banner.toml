@@ -1,0 +1,19 @@
+id = "AUTH-007"
+title = "Configure local login warning banner (/etc/issue)"
+description = 'Verifies that /etc/issue contains a legal warning banner and does not leak kernel or OS details via escape sequences (\m, \r, \s, \v).'
+severity = "low"
+profiles = ["cis-l1-server"]
+remediation = '''
+Write a concise legal notice to /etc/issue without \m, \r, \s, or \v escapes:
+  echo 'Authorized uses only. All activity may be monitored and reported.' | sudo tee /etc/issue
+'''
+
+[references]
+cis = ["1.6.2"]
+anssi = []
+nist = ["AC-8"]
+
+[check]
+type = "file_content"
+mode = "banner"
+paths = ["/etc/issue"]

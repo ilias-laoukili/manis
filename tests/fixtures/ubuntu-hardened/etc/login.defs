@@ -1,2 +1,4 @@
 # Hardened login.defs
 UMASK 077
+PASS_MAX_DAYS 365
+PASS_MIN_DAYS 1

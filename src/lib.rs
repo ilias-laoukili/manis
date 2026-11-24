@@ -2,6 +2,8 @@
 
 pub mod checks;
 pub mod cli;
+pub mod config;
+pub mod diff;
 pub mod engine;
 pub mod error;
 pub mod model;

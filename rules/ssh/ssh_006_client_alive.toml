@@ -1,0 +1,32 @@
+id = "SSH-006"
+title = "Configure SSH idle session keepalive timeouts"
+description = "Verifies that ClientAliveInterval (1..=300s) and ClientAliveCountMax (0..=3) are configured to terminate idle SSH sessions."
+severity = "medium"
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced"]
+remediation = """
+Set in /etc/ssh/sshd_config.d/01-hardening.conf:
+  ClientAliveInterval 300
+  ClientAliveCountMax 0
+Then validate and reload: sudo sshd -t && sudo systemctl reload ssh
+"""
+
+[references]
+cis = ["5.1.7"]
+anssi = []
+nist = ["AC-12"]
+
+[check]
+type = "sshd_config"
+file = "/etc/ssh/sshd_config"
+
+[[check.params]]
+key = "ClientAliveInterval"
+op = "le"
+value = "300"
+min_value = 1
+
+[[check.params]]
+key = "ClientAliveCountMax"
+op = "le"
+value = "3"
+min_value = 0

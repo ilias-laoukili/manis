@@ -1,0 +1,23 @@
+id = "FILE-010"
+title = "Restrict permissions and ownership on /etc/cron.d"
+description = "Verifies that /etc/cron.d is owned by root (allowed GIDs [0]) with permissions no more permissive than 0700."
+severity = "medium"
+profiles = ["cis-l1-server", "anssi-minimal", "anssi-intermediary", "anssi-reinforced"]
+remediation = """
+Enforce ownership and restrictive permissions on /etc/cron.d:
+  sudo chown root:root /etc/cron.d
+  sudo chmod 0700 /etc/cron.d
+"""
+
+[references]
+cis = ["2.4.1.7"]
+anssi = []
+nist = ["AC-6"]
+
+[check]
+type = "file_meta"
+path = "/etc/cron.d"
+max_mode = "0700"
+expected_uid = 0
+allowed_gids = [0]
+on_missing = "skip"

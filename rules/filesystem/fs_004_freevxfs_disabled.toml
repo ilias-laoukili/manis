@@ -1,0 +1,23 @@
+id = "FS-004"
+title = "Disable unused filesystem kernel module (freevxfs)"
+description = "Verifies that the legacy/uncommon 'freevxfs' filesystem kernel module is disabled via /etc/modprobe.d/*.conf to reduce kernel attack surface."
+severity = "low"
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced"]
+artifact_uri = "etc/modprobe.d/cis-filesystems.conf"
+remediation = """
+Add the following lines to /etc/modprobe.d/cis-filesystems.conf:
+  install freevxfs /bin/false
+  blacklist freevxfs
+"""
+
+[references]
+cis = ["1.1.1.2"]
+anssi = []
+nist = ["CM-7"]
+
+[check]
+type = "file_content"
+mode = "regex"
+match_mode = "any_line"
+paths = ["/etc/modprobe.d/*.conf"]
+pattern = "^(install\\s+freevxfs\\s+(/bin/true|/bin/false|/usr/bin/true|/usr/bin/false)|blacklist\\s+freevxfs\\b)"

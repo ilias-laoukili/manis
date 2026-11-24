@@ -1,0 +1,29 @@
+id = "SSH-010"
+title = "Disable SSH forwarding and configure pre-login Banner"
+description = "Verifies that DisableForwarding is set to 'yes' and Banner points to a legal warning banner file."
+severity = "medium"
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced"]
+remediation = """
+Set in /etc/ssh/sshd_config.d/01-hardening.conf:
+  DisableForwarding yes
+  Banner /etc/issue.net
+Then validate and reload: sudo sshd -t && sudo systemctl reload ssh
+"""
+
+[references]
+cis = ["5.1.5", "5.1.8"]
+anssi = []
+nist = ["AC-8", "SC-7"]
+
+[check]
+type = "sshd_config"
+file = "/etc/ssh/sshd_config"
+
+[[check.params]]
+key = "DisableForwarding"
+op = "eq"
+value = "yes"
+
+[[check.params]]
+key = "Banner"
+op = "present"

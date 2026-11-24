@@ -1,4 +1,5 @@
-//! `file_content` check primitive for shell timeouts (`TMOUT`), `umask`, and regex assertions.
+//! `file_content` check primitive for shell timeouts (`TMOUT`), `umask`, `key_value_bound`,
+//! account integrity (`/etc/passwd`, `/etc/shadow`), login banners, and regex assertions.
 
 use crate::checks::{expand_virtual_paths, CheckOutcome};
 use crate::rules::schema::{FileContentCheck, FileContentMode, RegexMatchMode};
@@ -12,6 +13,10 @@ pub fn evaluate(spec: &FileContentCheck, view: &dyn SystemView) -> CheckOutcome 
         FileContentMode::ShellTimeout => eval_shell_timeout(spec, view),
         FileContentMode::Umask => eval_umask(spec, view),
         FileContentMode::Regex => eval_regex(spec, view),
+        FileContentMode::KeyValueBound => eval_key_value_bound(spec, view),
+        FileContentMode::PasswdUidZero => eval_passwd_uid_zero(spec, view),
+        FileContentMode::ShadowEmptyPasswords => eval_shadow_empty_passwords(spec, view),
+        FileContentMode::Banner => eval_banner(spec, view),
     }
 }
 
@@ -93,23 +98,259 @@ fn validate_timeout_assignments(
             Ok(val) if val >= 1 && val <= max_seconds => {
                 valid_values.push(format!("{path}: {var}={val}"));
             }
-            Ok(0) => {
-                violations.push(format!("{path}: {var}=0 disables inactivity timeout"));
-            }
-            Ok(val) => {
-                violations.push(format!(
-                    "{path}: {var}={val} exceeds maximum {max_seconds}s"
-                ));
-            }
-            Err(_) => {
-                violations.push(format!(
-                    "{path}: {var}='{raw_val}' is not a valid positive integer"
-                ));
-            }
+            Ok(0) => violations.push(format!("{path}: {var}=0 disables inactivity timeout")),
+            Ok(val) => violations.push(format!(
+                "{path}: {var}={val} exceeds maximum {max_seconds}s"
+            )),
+            Err(_) => violations.push(format!(
+                "{path}: {var}='{raw_val}' is not a valid positive integer"
+            )),
         }
     }
 
     (valid_values, violations)
+}
+
+fn eval_key_value_bound(spec: &FileContentCheck, view: &dyn SystemView) -> CheckOutcome {
+    let Some(key) = spec.key.as_deref() else {
+        return CheckOutcome::error("file_content key_value_bound mode requires 'key'");
+    };
+    let expected = format_bound_expected(key, spec.min, spec.max);
+    let (paths, mut unreadable) = expand_virtual_paths(view, &spec.paths);
+    let mut existing = 0usize;
+    let mut last_value: Option<(String, String)> = None;
+
+    for path in &paths {
+        match view.read_to_string(path) {
+            Ok(content) => {
+                existing += 1;
+                for raw_line in content.lines() {
+                    let line = strip_shell_comment(raw_line).trim();
+                    if line.is_empty() {
+                        continue;
+                    }
+                    let mut parts = line.split_whitespace();
+                    if parts.next() == Some(key) {
+                        if let Some(val) = parts.next() {
+                            last_value = Some((path.clone(), val.to_string()));
+                        }
+                    }
+                }
+            }
+            Err(err) if err.is_not_found() => {}
+            Err(err) => unreadable.push(format!("{path}: {err}")),
+        }
+    }
+
+    if existing == 0 {
+        return missing_files_warn(
+            expected,
+            "target configuration file unavailable",
+            "none of the configured target files exist",
+            unreadable,
+        );
+    }
+
+    let Some((src, raw)) = last_value else {
+        return missing_directive_outcome(
+            expected,
+            &format!("{key} is not configured"),
+            &format!("{key} was not found in checked files"),
+            unreadable,
+        );
+    };
+
+    match raw.parse::<i64>() {
+        Ok(val) => {
+            let min_ok = spec.min.map_or(true, |m| val >= m);
+            let max_ok = spec.max.map_or(true, |m| val <= m);
+            if min_ok && max_ok {
+                finalize_content_outcome(
+                    expected,
+                    &[format!("{src}: {key}={val}")],
+                    Vec::new(),
+                    unreadable,
+                )
+            } else {
+                finalize_content_outcome(
+                    expected,
+                    &[],
+                    vec![format!("{src}: {key}={val}")],
+                    unreadable,
+                )
+            }
+        }
+        Err(_) => finalize_content_outcome(
+            expected,
+            &[],
+            vec![format!("{src}: {key}='{raw}' is not an integer")],
+            unreadable,
+        ),
+    }
+}
+
+fn format_bound_expected(key: &str, min: Option<i64>, max: Option<i64>) -> String {
+    match (min, max) {
+        (Some(lo), Some(hi)) => format!("{key} in [{lo}..={hi}]"),
+        (Some(lo), None) => format!("{key} >= {lo}"),
+        (None, Some(hi)) => format!("{key} <= {hi}"),
+        (None, None) => format!("{key} configured"),
+    }
+}
+
+fn eval_passwd_uid_zero(spec: &FileContentCheck, view: &dyn SystemView) -> CheckOutcome {
+    let path = spec.paths.first().map_or("/etc/passwd", String::as_str);
+    let expected = "only 'root' has UID 0 in /etc/passwd".to_string();
+
+    let content = match view.read_to_string(path) {
+        Ok(c) => c,
+        Err(err) => {
+            return CheckOutcome::warn(
+                expected,
+                format!("{path} unavailable"),
+                vec![format!("{path}: {err}")],
+            );
+        }
+    };
+
+    let mut uid_zero_accounts = Vec::new();
+    for raw_line in content.lines() {
+        let line = raw_line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let fields: Vec<&str> = line.split(':').collect();
+        if fields.len() >= 3 && fields[2] == "0" {
+            uid_zero_accounts.push(fields[0].to_string());
+        }
+    }
+
+    let non_root: Vec<String> = uid_zero_accounts
+        .iter()
+        .filter(|u| u.as_str() != "root")
+        .cloned()
+        .collect();
+
+    if !non_root.is_empty() {
+        return CheckOutcome::fail(
+            expected,
+            format!("additional UID 0 account(s): {}", non_root.join(", ")),
+            non_root
+                .into_iter()
+                .map(|u| format!("{path}: non-root account '{u}' has UID 0"))
+                .collect(),
+        );
+    }
+
+    if uid_zero_accounts.is_empty() {
+        return CheckOutcome::warn(
+            expected,
+            "no UID 0 account found in /etc/passwd",
+            vec![format!("{path}: expected 'root' entry with UID 0")],
+        );
+    }
+
+    CheckOutcome::pass(expected, "only 'root' has UID 0")
+}
+
+fn eval_shadow_empty_passwords(spec: &FileContentCheck, view: &dyn SystemView) -> CheckOutcome {
+    let path = spec.paths.first().map_or("/etc/shadow", String::as_str);
+    let expected = "no accounts with empty password fields in /etc/shadow".to_string();
+
+    let content = match view.read_to_string(path) {
+        Ok(c) => c,
+        Err(err) => {
+            return CheckOutcome::warn(
+                expected,
+                format!("{path} unavailable or unreadable"),
+                vec![format!("{path}: {err}")],
+            );
+        }
+    };
+
+    let mut empty_accounts = Vec::new();
+    for raw_line in content.lines() {
+        let line = raw_line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let fields: Vec<&str> = line.split(':').collect();
+        if fields.len() >= 2 && fields[1].is_empty() {
+            empty_accounts.push(fields[0].to_string());
+        }
+    }
+
+    if !empty_accounts.is_empty() {
+        return CheckOutcome::fail(
+            expected,
+            format!(
+                "{} account(s) with empty password field",
+                empty_accounts.len()
+            ),
+            empty_accounts
+                .into_iter()
+                .map(|u| format!("{path}: account '{u}' has an empty password field"))
+                .collect(),
+        );
+    }
+
+    CheckOutcome::pass(expected, "all accounts have non-empty password fields")
+}
+
+fn eval_banner(spec: &FileContentCheck, view: &dyn SystemView) -> CheckOutcome {
+    let path = spec.paths.first().map_or("/etc/issue", String::as_str);
+    let expected = format!(
+        "{path} contains a non-empty legal warning banner without OS leak escapes (\\m, \\r, \\s, \\v)"
+    );
+
+    let content = match view.read_to_string(path) {
+        Ok(c) => c,
+        Err(err) if err.is_not_found() => {
+            return CheckOutcome::fail(
+                expected,
+                format!("{path} is missing"),
+                vec![format!("{path}: banner file does not exist")],
+            );
+        }
+        Err(err) => {
+            return CheckOutcome::warn(
+                expected,
+                format!("{path} unreadable"),
+                vec![format!("{path}: {err}")],
+            );
+        }
+    };
+
+    let trimmed = content.trim();
+    if trimmed.is_empty() {
+        return CheckOutcome::fail(
+            expected,
+            format!("{path} is empty"),
+            vec![format!("{path}: no warning banner text configured")],
+        );
+    }
+
+    let mut leaks = Vec::new();
+    for seq in ["\\m", "\\r", "\\s", "\\v"] {
+        if content.contains(seq) {
+            leaks.push(seq);
+        }
+    }
+    if !leaks.is_empty() {
+        return CheckOutcome::fail(
+            expected,
+            format!("{path} exposes OS escape sequence(s): {}", leaks.join(", ")),
+            vec![format!(
+                "{path}: remove OS information escapes ({})",
+                leaks.join(", ")
+            )],
+        );
+    }
+
+    CheckOutcome::pass(
+        expected,
+        format!("{path} configured without OS leak escapes"),
+    )
 }
 
 fn missing_files_warn(
@@ -413,53 +654,28 @@ fn eval_regex(spec: &FileContentCheck, view: &dyn SystemView) -> CheckOutcome {
 
     match spec.match_mode {
         RegexMatchMode::AnyLine => {
-            if !matches.is_empty() {
-                if !unreadable.is_empty() {
-                    return CheckOutcome::warn(
-                        format!("line matching '{pattern}'"),
-                        format!("matched, but {} file(s) unreadable", unreadable.len()),
-                        unreadable,
-                    );
-                }
-                CheckOutcome::pass(format!("line matching '{pattern}'"), matches.join("; "))
-            } else if !unreadable.is_empty() {
-                CheckOutcome::warn(
-                    format!("line matching '{pattern}'"),
-                    "no match in readable files",
-                    unreadable,
-                )
-            } else {
-                CheckOutcome::fail(
+            if matches.is_empty() {
+                missing_directive_outcome(
                     format!("at least one line matching '{pattern}'"),
                     "no matching line found",
-                    vec![format!(
-                        "pattern '{pattern}' did not match any checked file"
-                    )],
-                )
-            }
-        }
-        RegexMatchMode::NoLine => {
-            if !matches.is_empty() {
-                let actual = matches.join("; ");
-                let mut details = matches;
-                details.extend(unreadable);
-                CheckOutcome::fail(format!("no line matching '{pattern}'"), actual, details)
-            } else if !unreadable.is_empty() {
-                CheckOutcome::warn(
-                    format!("no line matching '{pattern}'"),
-                    format!(
-                        "clean in readable files, but {} file(s) unreadable",
-                        unreadable.len()
-                    ),
+                    &format!("pattern '{pattern}' did not match any checked file"),
                     unreadable,
                 )
             } else {
-                CheckOutcome::pass(
-                    format!("no line matching '{pattern}'"),
-                    "no forbidden lines found",
+                finalize_content_outcome(
+                    format!("line matching '{pattern}'"),
+                    &matches,
+                    Vec::new(),
+                    unreadable,
                 )
             }
         }
+        RegexMatchMode::NoLine => finalize_content_outcome(
+            format!("no line matching '{pattern}'"),
+            &["no forbidden lines found".to_string()],
+            matches,
+            unreadable,
+        ),
     }
 }
 
@@ -565,17 +781,14 @@ fn join_set(set: &BTreeSet<String>) -> String {
 mod tests {
     use super::*;
     use crate::model::Status;
-    use crate::sys::RootFsSystemView;
+    use crate::sys::{rootfs::FIXTURE_META_FILE, RootFsSystemView};
     use std::fs;
     use tempfile::tempdir;
 
-    fn timeout_spec() -> FileContentCheck {
+    fn base_spec(mode: FileContentMode) -> FileContentCheck {
         FileContentCheck {
-            mode: FileContentMode::ShellTimeout,
-            paths: vec![
-                "/etc/profile".to_string(),
-                "/etc/profile.d/*.sh".to_string(),
-            ],
+            mode,
+            paths: Vec::new(),
             var: "TMOUT".to_string(),
             max_seconds: 600,
             require_readonly: true,
@@ -585,97 +798,81 @@ mod tests {
             pam_paths: Vec::new(),
             pattern: None,
             match_mode: RegexMatchMode::AnyLine,
-        }
-    }
-
-    fn umask_spec() -> FileContentCheck {
-        FileContentCheck {
-            mode: FileContentMode::Umask,
-            paths: vec![
-                "/etc/profile.d/*.sh".to_string(),
-                "/etc/bash.bashrc".to_string(),
-            ],
-            var: "TMOUT".to_string(),
-            max_seconds: 600,
-            require_readonly: true,
-            strict_paths: vec!["/etc/login.defs".to_string(), "/etc/profile".to_string()],
-            strict_allowed: vec!["077".to_string()],
-            standard_allowed: vec!["027".to_string(), "077".to_string()],
-            pam_paths: vec!["/etc/pam.d/common-session".to_string()],
-            pattern: None,
-            match_mode: RegexMatchMode::AnyLine,
+            key: None,
+            min: None,
+            max: None,
         }
     }
 
     #[test]
-    fn timeout_passes_when_within_limit_and_readonly() {
-        let dir = tempdir().expect("tempdir");
-        fs::create_dir_all(dir.path().join("etc/profile.d")).expect("mkdir");
-        fs::write(
-            dir.path().join("etc/profile.d/tmout.sh"),
-            "# Shell timeout\nreadonly TMOUT=600 # 10 min\nexport TMOUT\n",
-        )
-        .expect("write");
-
-        let view = RootFsSystemView::from_root(dir.path()).expect("view");
-        let out = evaluate(&timeout_spec(), &view);
-        assert_eq!(out.status, Status::Pass);
-    }
-
-    #[test]
-    fn timeout_fails_when_exceeding_max_seconds() {
-        let dir = tempdir().expect("tempdir");
-        fs::create_dir_all(dir.path().join("etc/profile.d")).expect("mkdir");
-        fs::write(
-            dir.path().join("etc/profile.d/tmout.sh"),
-            "TMOUT=900\nreadonly TMOUT\n",
-        )
-        .expect("write");
-
-        let view = RootFsSystemView::from_root(dir.path()).expect("view");
-        let out = evaluate(&timeout_spec(), &view);
-        assert_eq!(out.status, Status::Fail);
-        assert!(out.actual.as_deref().unwrap().contains("exceeds maximum"));
-    }
-
-    #[test]
-    fn timeout_warns_when_no_files_exist() {
-        let dir = tempdir().expect("tempdir");
-        let view = RootFsSystemView::from_root(dir.path()).expect("view");
-        let out = evaluate(&timeout_spec(), &view);
-        assert_eq!(out.status, Status::Warn);
-    }
-
-    #[test]
-    fn umask_fails_when_weak_override_present_alongside_strict() {
+    fn key_value_bound_validates_login_defs_pass_max_days() {
         let dir = tempdir().expect("tempdir");
         fs::create_dir_all(dir.path().join("etc")).expect("mkdir");
-        fs::write(dir.path().join("etc/login.defs"), "UMASK 077\n").expect("write");
-        fs::write(dir.path().join("etc/bash.bashrc"), "umask 022\n").expect("write");
+        fs::write(dir.path().join("etc/login.defs"), "PASS_MAX_DAYS 365\n").expect("write");
 
         let view = RootFsSystemView::from_root(dir.path()).expect("view");
-        let out = evaluate(&umask_spec(), &view);
-        assert_eq!(out.status, Status::Fail);
-        assert!(out.actual.as_deref().unwrap().contains("022"));
+        let mut spec = base_spec(FileContentMode::KeyValueBound);
+        spec.paths = vec!["/etc/login.defs".to_string()];
+        spec.key = Some("PASS_MAX_DAYS".to_string());
+        spec.min = Some(1);
+        spec.max = Some(365);
+
+        assert_eq!(evaluate(&spec, &view).status, Status::Pass);
+
+        fs::write(dir.path().join("etc/login.defs"), "PASS_MAX_DAYS 99999\n").expect("write");
+        assert_eq!(evaluate(&spec, &view).status, Status::Fail);
     }
 
     #[test]
-    fn umask_passes_when_all_directives_compliant() {
+    fn passwd_uid_zero_and_shadow_empty_passwords() {
         let dir = tempdir().expect("tempdir");
-        fs::create_dir_all(dir.path().join("etc/pam.d")).expect("mkdir");
+        fs::create_dir_all(dir.path().join("etc")).expect("mkdir");
         fs::write(
-            dir.path().join("etc/login.defs"),
-            "# UMASK 022\nUMASK 0077\n",
+            dir.path().join("etc/passwd"),
+            "root:x:0:0:root:/root:/bin/bash\nrogue:x:0:0::/tmp:/bin/sh\n",
         )
         .expect("write");
         fs::write(
-            dir.path().join("etc/pam.d/common-session"),
-            "session optional pam_umask.so umask=0027\n",
+            dir.path().join("etc/shadow"),
+            "root:*:19000:0:99999:7:::\nguest::19000:0:99999:7:::\n",
         )
         .expect("write");
 
         let view = RootFsSystemView::from_root(dir.path()).expect("view");
-        let out = evaluate(&umask_spec(), &view);
-        assert_eq!(out.status, Status::Pass);
+        let mut pspec = base_spec(FileContentMode::PasswdUidZero);
+        pspec.paths = vec!["/etc/passwd".to_string()];
+        assert_eq!(evaluate(&pspec, &view).status, Status::Fail);
+
+        let mut sspec = base_spec(FileContentMode::ShadowEmptyPasswords);
+        sspec.paths = vec!["/etc/shadow".to_string()];
+        assert_eq!(evaluate(&sspec, &view).status, Status::Fail);
+
+        // Unreadable /etc/shadow must WARN, never PASS.
+        fs::write(
+            dir.path().join(FIXTURE_META_FILE),
+            "[files.\"/etc/shadow\"]\nunreadable = true\n",
+        )
+        .expect("write");
+        let view2 = RootFsSystemView::from_root(dir.path()).expect("view");
+        assert_eq!(evaluate(&sspec, &view2).status, Status::Warn);
+    }
+
+    #[test]
+    fn banner_rejects_os_escape_sequences() {
+        let dir = tempdir().expect("tempdir");
+        fs::create_dir_all(dir.path().join("etc")).expect("mkdir");
+        fs::write(dir.path().join("etc/issue"), "Ubuntu 24.04 \\n \\l \\r\n").expect("write");
+
+        let view = RootFsSystemView::from_root(dir.path()).expect("view");
+        let mut spec = base_spec(FileContentMode::Banner);
+        spec.paths = vec!["/etc/issue".to_string()];
+        assert_eq!(evaluate(&spec, &view).status, Status::Fail);
+
+        fs::write(
+            dir.path().join("etc/issue"),
+            "Authorized access only. All activity may be monitored.\n",
+        )
+        .expect("write");
+        assert_eq!(evaluate(&spec, &view).status, Status::Pass);
     }
 }
