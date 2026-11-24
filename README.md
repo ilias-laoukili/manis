@@ -1,9 +1,6 @@
 <div align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/theme/logo-dark.svg">
-    <source media="(prefers-color-scheme: light)" srcset="docs/theme/logo.svg">
-    <img alt="manis logo" src="docs/theme/logo.svg" width="160">
-  </picture>
+  <img alt="manis logo" src="docs/theme/logo.svg#gh-light-mode-only" width="160">
+  <img alt="manis logo" src="docs/theme/logo-dark.svg#gh-dark-mode-only" width="160">
 
   <h1>manis</h1>
 
