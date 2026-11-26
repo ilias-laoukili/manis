@@ -28,6 +28,7 @@ fn ubuntu_hardened_fixture_passes_cis_l1_server_and_all_profiles_with_exit_0() {
             "audit",
             "--format",
             "json",
+            "--fixture-meta",
             "--root",
             fixture.to_str().unwrap(),
         ])
@@ -56,6 +57,7 @@ fn ubuntu_hardened_fixture_passes_cis_l1_server_and_all_profiles_with_exit_0() {
             "all",
             "--format",
             "json",
+            "--fixture-meta",
             "--root",
             fixture.to_str().unwrap(),
         ])
@@ -81,6 +83,7 @@ fn ubuntu_default_fixture_fails_unhardened_rules_and_reports_expected_actual_rem
             "all",
             "--format",
             "json",
+            "--fixture-meta",
             "--root",
             fixture.to_str().unwrap(),
         ])
@@ -155,7 +158,9 @@ fn ubuntu_default_fixture_fails_unhardened_rules_and_reports_expected_actual_rem
 #[test]
 fn json_sarif_and_markdown_outputs_are_deterministic_and_sarif_includes_locations() {
     let registry = RuleRegistry::load_embedded().expect("registry");
-    let view = RootFsSystemView::from_root(fixture_path("ubuntu-default")).expect("view");
+    let view = RootFsSystemView::from_root(fixture_path("ubuntu-default"))
+        .and_then(RootFsSystemView::with_fixture_meta)
+        .expect("view");
 
     let r1 = run_audit(&registry, "cis-l1-server", &view).expect("run 1");
     let r2 = run_audit(&registry, "cis-l1-server", &view).expect("run 2");
@@ -196,7 +201,9 @@ fn json_sarif_and_markdown_outputs_are_deterministic_and_sarif_includes_location
 #[test]
 fn manis_toml_waivers_expiration_and_overrides_work_deterministically() {
     let registry = RuleRegistry::load_embedded().expect("registry");
-    let view = RootFsSystemView::from_root(fixture_path("ubuntu-default")).expect("view");
+    let view = RootFsSystemView::from_root(fixture_path("ubuntu-default"))
+        .and_then(RootFsSystemView::with_fixture_meta)
+        .expect("view");
 
     let cfg = UserConfig::parse(
         r#"
@@ -258,6 +265,7 @@ fn diff_subcommand_detects_fixes_regressions_and_honors_no_fail() {
             "audit",
             "--format",
             "json",
+            "--fixture-meta",
             "--root",
             fixture_path("ubuntu-default").to_str().unwrap(),
             "--output",
@@ -272,6 +280,7 @@ fn diff_subcommand_detects_fixes_regressions_and_honors_no_fail() {
             "audit",
             "--format",
             "json",
+            "--fixture-meta",
             "--root",
             fixture_path("ubuntu-hardened").to_str().unwrap(),
             "--output",
@@ -413,6 +422,7 @@ fn cli_list_explain_config_and_error_exit_codes() {
             "audit",
             "--format",
             "json",
+            "--fixture-meta",
             "--root",
             fixture_path("ubuntu-default").to_str().unwrap(),
             "--config",
@@ -423,4 +433,63 @@ fn cli_list_explain_config_and_error_exit_codes() {
     let rep: AuditReport = serde_json::from_slice(&out.stdout).expect("json");
     let ssh002 = rep.results.iter().find(|r| r.id == "SSH-002").unwrap();
     assert_eq!(ssh002.status, Status::Skip);
+}
+
+#[test]
+fn fixture_meta_overlay_is_ignored_unless_opted_in() {
+    // An audited tree must never rewrite its own metadata: `.manis-meta.toml` only applies with
+    // the explicit `--fixture-meta` opt-in.
+    let root = tempdir().expect("tempdir");
+    std::fs::create_dir_all(root.path().join("etc")).expect("mkdir");
+    std::fs::write(
+        root.path().join("etc/passwd"),
+        "root:x:0:0:root:/root:/bin/bash\n",
+    )
+    .expect("write passwd");
+    std::fs::write(
+        root.path().join(".manis-meta.toml"),
+        "[files.\"/etc/passwd\"]\nunreadable = true\n",
+    )
+    .expect("write overlay");
+    let root_arg = root.path().to_str().unwrap();
+
+    let auth_005 = |extra: &[&str]| -> Status {
+        let out = manis_bin()
+            .args(["audit", "--profile", "all", "--format", "json"])
+            .args(["--root", root_arg])
+            .args(extra)
+            .output()
+            .expect("run manis audit");
+        let report: AuditReport = serde_json::from_slice(&out.stdout).expect("valid JSON report");
+        report
+            .results
+            .iter()
+            .find(|r| r.id == "AUTH-005")
+            .expect("AUTH-005 result")
+            .status
+    };
+    assert_eq!(
+        auth_005(&[]),
+        Status::Pass,
+        "the overlay must be ignored by default"
+    );
+    assert_eq!(
+        auth_005(&["--fixture-meta"]),
+        Status::Warn,
+        "the overlay applies only with --fixture-meta"
+    );
+
+    // `--fixture-meta` requires `--root` and an overlay file: both mistakes exit 2.
+    let without_root = manis_bin()
+        .args(["audit", "--fixture-meta"])
+        .output()
+        .expect("audit --fixture-meta without --root");
+    assert_eq!(without_root.status.code(), Some(2));
+    let empty = tempdir().expect("tempdir");
+    let without_overlay = manis_bin()
+        .args(["audit", "--fixture-meta", "--root"])
+        .arg(empty.path())
+        .output()
+        .expect("audit --fixture-meta without overlay");
+    assert_eq!(without_overlay.status.code(), Some(2));
 }

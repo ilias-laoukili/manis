@@ -123,7 +123,9 @@ mod tests {
         )
         .expect("write");
 
-        let view = RootFsSystemView::from_root(dir.path()).expect("view");
+        let view = RootFsSystemView::from_root(dir.path())
+            .and_then(RootFsSystemView::with_fixture_meta)
+            .expect("view");
         let out = evaluate(&shadow_spec(), &view);
         assert_eq!(out.status, Status::Pass);
     }
@@ -139,7 +141,9 @@ mod tests {
         )
         .expect("write");
 
-        let view = RootFsSystemView::from_root(dir.path()).expect("view");
+        let view = RootFsSystemView::from_root(dir.path())
+            .and_then(RootFsSystemView::with_fixture_meta)
+            .expect("view");
         let out = evaluate(&shadow_spec(), &view);
         assert_eq!(out.status, Status::Fail);
         assert_eq!(out.details.len(), 3);

@@ -43,7 +43,7 @@ Embedded TOML Rules & Profiles (103 rules) + Optional User Config (manis.toml)
 - Every check primitive inspects the target system strictly through `SystemView` (`read_to_string`, `read_bytes`, `metadata`, `read_link`, `read_dir`, `walk_files`, `kernel_release`).
 - Virtual paths are confined inside the configured root directory (`..` traversal is rejected).
 - In `--root <path>` mode, symlinks are resolved component by component inside the root, like a `chroot`: absolute targets are re-rooted, `..` in a target stops at the root, and more than 40 links is an error. No read can reach a host file. Live mode (`/`) keeps kernel path resolution.
-- In `--root <path>` fixture mode only, an optional `.manis-meta.toml` overlay may specify simulated Unix permission modes, `uid`/`gid`, `unreadable = true`, or `symlink_target` (since Git does not store SUID/SGID bits or ownership). Live mode (`/`) **never** reads `.manis-meta.toml`.
+- Only with the explicit `--fixture-meta` opt-in (which requires `--root <path>`), an optional `<root>/.manis-meta.toml` overlay may specify simulated Unix permission modes, `uid`/`gid`, `unreadable = true`, or `symlink_target` (since Git does not store SUID/SGID bits or ownership). Without the flag the file is an ordinary file of the audited tree, so an audited image can never rewrite its own metadata. Live mode (`/`) **never** reads `.manis-meta.toml`.
 
 ### Status Semantics (No False Positives)
 
@@ -83,7 +83,7 @@ All 103 embedded rules are implemented via 14 reusable, zero-subprocess primitiv
 manis audit [--profile cis-l1-server|all|anssi-minimal|anssi-intermediary|anssi-reinforced] \
             [--format table|json|sarif|markdown] \
             [--fail-on critical|high|medium|low] \
-            [--root <path>] [--config manis.toml] [--output <file>]
+            [--root <path> [--fixture-meta]] [--config manis.toml] [--output <file>]
 
 manis list [--profile <name>]
 manis explain <RULE_ID>
@@ -93,6 +93,7 @@ manis diff <baseline.json> <current.json> [--format table|json|markdown] [--no-f
 - Default `--profile`: `cis-l1-server`.
 - Default `--format`: `table` (uses international `REFS` column).
 - Default `--fail-on`: `low`.
+- `--fixture-meta` (test fixtures only) applies `<root>/.manis-meta.toml`; it requires `--root` and exits `2` when the overlay is missing or invalid.
 - Deterministic JSON, SARIF 2.1.0 (with `physicalLocation.artifactLocation.uri` on every finding), and Markdown outputs omit variable wall-clock timestamps by default.
 - Stdout handles `BrokenPipe` cleanly (exit `0` without panicking in shell pipelines).
 

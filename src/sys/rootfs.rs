@@ -23,7 +23,8 @@ use std::ffi::OsString;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
-/// Optional metadata overlay filename recognized ONLY in `--root <path>` mode.
+/// Fixture metadata overlay filename, applied ONLY on explicit opt-in in `--root <path>` mode
+/// ([`RootFsSystemView::with_fixture_meta`], CLI `--fixture-meta`).
 pub const FIXTURE_META_FILE: &str = ".manis-meta.toml";
 
 /// Maximum number of symbolic links followed while resolving one path in `--root` mode
@@ -135,7 +136,7 @@ impl ParsedOverlay {
 pub struct RootFsSystemView {
     root: PathBuf,
     display_root: String,
-    /// `Some(...)` ONLY when constructed via [`Self::from_root`] and `.manis-meta.toml` exists.
+    /// `Some(...)` ONLY after the explicit [`Self::with_fixture_meta`] opt-in on a `--root` view.
     /// Always `None` in live host mode (`/`).
     overlay: Option<ParsedOverlay>,
     /// `true` ONLY when constructed via [`Self::from_root`]: paths and symlinks are resolved
@@ -159,7 +160,8 @@ impl RootFsSystemView {
     /// Creates an offline view anchored at `root`.
     ///
     /// Every path, symlinks included, is resolved inside `root` (see the module documentation).
-    /// Loads `<root>/.manis-meta.toml` if and only if present inside the fixture directory.
+    /// A `<root>/.manis-meta.toml` is never applied here: it stays an ordinary file of the audited
+    /// tree unless [`Self::with_fixture_meta`] explicitly opts in.
     pub fn from_root(root: impl AsRef<Path>) -> Result<Self, ManisError> {
         let root_path = root.as_ref();
         if !root_path.exists() {
@@ -174,25 +176,46 @@ impl RootFsSystemView {
             )));
         }
 
-        let mut view = Self {
+        Ok(Self {
             root: root_path.to_path_buf(),
             display_root: root_path.display().to_string(),
             overlay: None,
             confined: true,
-        };
+        })
+    }
 
-        // The overlay itself is located through confined resolution, so a symlinked overlay can
-        // never point outside the root. Any resolution error means "no overlay", like a missing
-        // file.
-        if let Ok(overlay_path) =
-            view.host_path(&format!("/{FIXTURE_META_FILE}"), FinalComponent::Follow)
-        {
-            if overlay_path.is_file() {
-                view.overlay = Some(ParsedOverlay::load(&overlay_path)?);
-            }
+    /// Applies the `<root>/.manis-meta.toml` fixture overlay (CLI `--fixture-meta`).
+    ///
+    /// The overlay simulates permission modes, ownership, unreadable files and symlinks that Git
+    /// cannot store. It lets the audited tree rewrite its own metadata, so it is opt-in and meant
+    /// for trusted test fixtures only. It is located through confined resolution, so a symlinked
+    /// overlay can never point outside the root.
+    ///
+    /// Fails on a live view, or when the overlay is missing, not a regular file, or invalid.
+    pub fn with_fixture_meta(mut self) -> Result<Self, ManisError> {
+        if !self.confined {
+            return Err(ManisError::Config(
+                "fixture metadata overlays are only available with --root".to_string(),
+            ));
         }
-
-        Ok(view)
+        let vpath = format!("/{FIXTURE_META_FILE}");
+        let overlay_path = match self.host_path(&vpath, FinalComponent::Follow) {
+            Ok(path) if path.is_file() => path,
+            Ok(_) => {
+                return Err(ManisError::Config(format!(
+                    "fixture metadata overlay {vpath} under '{}' is not a regular file",
+                    self.display_root
+                )));
+            }
+            Err(err) => {
+                return Err(ManisError::Config(format!(
+                    "fixture metadata overlay unavailable under '{}': {err}",
+                    self.display_root
+                )));
+            }
+        };
+        self.overlay = Some(ParsedOverlay::load(&overlay_path)?);
+        Ok(self)
     }
 
     /// Maps a normalized virtual path to the host path to operate on.
@@ -612,7 +635,7 @@ mod tests {
     }
 
     #[test]
-    fn overlay_applies_mode_and_unreadable_in_root_mode() {
+    fn overlay_applies_mode_and_unreadable_with_fixture_meta_opt_in() {
         let dir = tempdir().expect("tempdir");
         fs::create_dir_all(dir.path().join("usr/bin")).expect("mkdir");
         fs::create_dir_all(dir.path().join("etc")).expect("mkdir");
@@ -632,7 +655,9 @@ unreadable = true
         )
         .expect("write overlay");
 
-        let view = RootFsSystemView::from_root(dir.path()).expect("root view");
+        let view = RootFsSystemView::from_root(dir.path())
+            .and_then(RootFsSystemView::with_fixture_meta)
+            .expect("root view");
         let meta = view.metadata("/usr/bin/custom").expect("metadata");
         assert!(meta.is_suid());
         assert!(meta.is_world_writable());
@@ -644,6 +669,42 @@ unreadable = true
         // Internal meta file is hidden from read_dir and walk_files
         let root_entries = view.read_dir("/").expect("read_dir");
         assert!(!root_entries.iter().any(|e| e.name == FIXTURE_META_FILE));
+    }
+
+    #[test]
+    fn overlay_present_in_root_is_ignored_by_default() {
+        let dir = tempdir().expect("tempdir");
+        fs::create_dir_all(dir.path().join("etc")).expect("mkdir");
+        fs::write(dir.path().join("etc/sudoers"), b"root ALL=(ALL) ALL\n").expect("write");
+        fs::write(
+            dir.path().join(FIXTURE_META_FILE),
+            "[files.\"/etc/sudoers\"]\nmode = \"4777\"\nunreadable = true\n",
+        )
+        .expect("write overlay");
+
+        let view = RootFsSystemView::from_root(dir.path()).expect("root view");
+        assert!(view.overlay.is_none());
+        // The forged metadata is not applied...
+        assert!(view.read_to_string("/etc/sudoers").is_ok());
+        assert!(!view.metadata("/etc/sudoers").expect("metadata").is_suid());
+        // ...and the overlay is audited as an ordinary file of the tree.
+        let root_entries = view.read_dir("/").expect("read_dir");
+        assert!(root_entries.iter().any(|e| e.name == FIXTURE_META_FILE));
+    }
+
+    #[test]
+    fn fixture_meta_opt_in_requires_root_and_an_overlay() {
+        assert!(matches!(
+            RootFsSystemView::live().with_fixture_meta(),
+            Err(ManisError::Config(_))
+        ));
+
+        let dir = tempdir().expect("tempdir");
+        let view = RootFsSystemView::from_root(dir.path()).expect("root view");
+        assert!(matches!(
+            view.with_fixture_meta(),
+            Err(ManisError::Config(_))
+        ));
     }
 
     #[test]
@@ -867,7 +928,7 @@ unreadable = true
 
     #[cfg(unix)]
     #[test]
-    fn symlinked_overlay_pointing_outside_root_is_ignored() {
+    fn symlinked_overlay_pointing_outside_root_is_never_loaded() {
         let host = tempdir().expect("host dir");
         write_file(
             host.path(),
@@ -885,5 +946,12 @@ unreadable = true
         let view = RootFsSystemView::from_root(root.path()).expect("root view");
         assert!(view.overlay.is_none());
         assert!(view.read_to_string("/etc/sudoers").is_ok());
+
+        // Even with the explicit opt-in, the overlay is resolved inside the root: the host file
+        // it points to is never loaded.
+        assert!(matches!(
+            view.with_fixture_meta(),
+            Err(ManisError::Config(_))
+        ));
     }
 }

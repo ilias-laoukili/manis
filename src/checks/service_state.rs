@@ -214,7 +214,9 @@ mod tests {
         )
         .expect("write overlay");
 
-        let view = RootFsSystemView::from_root(dir.path()).expect("view");
+        let view = RootFsSystemView::from_root(dir.path())
+            .and_then(RootFsSystemView::with_fixture_meta)
+            .expect("view");
         assert_eq!(
             evaluate(
                 &make_spec(

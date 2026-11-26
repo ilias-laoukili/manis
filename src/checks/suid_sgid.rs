@@ -136,7 +136,9 @@ mod tests {
         )
         .expect("write");
 
-        let view = RootFsSystemView::from_root(dir.path()).expect("view");
+        let view = RootFsSystemView::from_root(dir.path())
+            .and_then(RootFsSystemView::with_fixture_meta)
+            .expect("view");
         let out = evaluate(&sample_spec(), &view);
         assert_eq!(out.status, Status::Pass);
     }
@@ -152,7 +154,9 @@ mod tests {
         )
         .expect("write");
 
-        let view = RootFsSystemView::from_root(dir.path()).expect("view");
+        let view = RootFsSystemView::from_root(dir.path())
+            .and_then(RootFsSystemView::with_fixture_meta)
+            .expect("view");
         let out = evaluate(&sample_spec(), &view);
         assert_eq!(out.status, Status::Fail);
         assert!(out.details[0].contains("/usr/local/bin/rogue"));
@@ -170,7 +174,9 @@ mod tests {
         )
         .expect("write");
 
-        let view = RootFsSystemView::from_root(dir.path()).expect("view");
+        let view = RootFsSystemView::from_root(dir.path())
+            .and_then(RootFsSystemView::with_fixture_meta)
+            .expect("view");
         let out = evaluate(&sample_spec(), &view);
         assert_eq!(out.status, Status::Fail);
         assert!(out.actual.as_deref().unwrap().contains("world-writable"));
@@ -186,7 +192,9 @@ mod tests {
         )
         .expect("write");
 
-        let view = RootFsSystemView::from_root(dir.path()).expect("view");
+        let view = RootFsSystemView::from_root(dir.path())
+            .and_then(RootFsSystemView::with_fixture_meta)
+            .expect("view");
         let out = evaluate(&sample_spec(), &view);
         assert_eq!(out.status, Status::Warn);
     }

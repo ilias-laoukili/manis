@@ -45,6 +45,12 @@ pub struct AuditArgs {
     #[arg(long)]
     pub root: Option<PathBuf>,
 
+    /// Apply `<ROOT>/.manis-meta.toml` (simulated modes, ownership, unreadable files and
+    /// symlinks for test fixtures). The file rewrites the audited tree's own metadata: never use
+    /// this flag on untrusted images.
+    #[arg(long, requires = "root")]
+    pub fixture_meta: bool,
+
     /// Optional user configuration file (`manis.toml`) for waivers and overrides.
     #[arg(long)]
     pub config: Option<PathBuf>,

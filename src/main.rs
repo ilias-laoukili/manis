@@ -43,6 +43,9 @@ fn execute(cli: Cli) -> Result<ExitCode, ManisError> {
 
 fn run_audit_cmd(registry: &RuleRegistry, args: &AuditArgs) -> Result<ExitCode, ManisError> {
     let view = match &args.root {
+        Some(path) if args.fixture_meta => {
+            RootFsSystemView::from_root(path)?.with_fixture_meta()?
+        }
         Some(path) => RootFsSystemView::from_root(path)?,
         None => RootFsSystemView::live(),
     };
