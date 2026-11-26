@@ -560,7 +560,9 @@ mod tests {
         )
         .expect("write");
 
-        let view = RootFsSystemView::from_root(dir.path()).expect("view");
+        let view = RootFsSystemView::from_root(dir.path())
+            .and_then(RootFsSystemView::with_fixture_meta)
+            .expect("view");
         let out = evaluate(&base_spec(SudoersMode::ForbidBroadRootTargets), &view);
         assert_eq!(out.status, Status::Warn);
     }

@@ -132,7 +132,9 @@ mod tests {
         )
         .expect("overlay");
 
-        let view = RootFsSystemView::from_root(dir.path()).expect("view");
+        let view = RootFsSystemView::from_root(dir.path())
+            .and_then(RootFsSystemView::with_fixture_meta)
+            .expect("view");
         let out = evaluate(&sample_spec(), &view);
         assert_eq!(out.status, Status::Pass);
     }
@@ -148,7 +150,9 @@ mod tests {
         )
         .expect("overlay");
 
-        let view = RootFsSystemView::from_root(dir.path()).expect("view");
+        let view = RootFsSystemView::from_root(dir.path())
+            .and_then(RootFsSystemView::with_fixture_meta)
+            .expect("view");
         let out = evaluate(&sample_spec(), &view);
         assert_eq!(out.status, Status::Fail);
         assert_eq!(out.details.len(), 2);
@@ -167,7 +171,9 @@ mod tests {
             "[files.\"/root\"]\nunreadable = true\n",
         )
         .expect("overlay");
-        let view = RootFsSystemView::from_root(dir.path()).expect("view");
+        let view = RootFsSystemView::from_root(dir.path())
+            .and_then(RootFsSystemView::with_fixture_meta)
+            .expect("view");
         assert_eq!(evaluate(&sample_spec(), &view).status, Status::Warn);
     }
 }

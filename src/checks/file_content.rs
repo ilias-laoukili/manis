@@ -1107,7 +1107,9 @@ mod tests {
             "[files.\"/etc/shadow\"]\nunreadable = true\n",
         )
         .expect("write");
-        let view2 = RootFsSystemView::from_root(dir.path()).expect("view");
+        let view2 = RootFsSystemView::from_root(dir.path())
+            .and_then(RootFsSystemView::with_fixture_meta)
+            .expect("view");
         assert_eq!(evaluate(&sspec, &view2).status, Status::Warn);
     }
 

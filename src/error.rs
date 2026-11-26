@@ -11,6 +11,9 @@ pub enum SystemError {
     PermissionDenied(String),
     /// Virtual path attempted to escape the configured root directory.
     PathTraversal(String),
+    /// Symlink resolution inside `--root` exceeded [`crate::sys::rootfs::MAX_SYMLINK_HOPS`] links
+    /// (a loop or an overly long chain).
+    SymlinkLoop(String),
     /// Any other I/O error.
     Io { path: String, message: String },
 }
@@ -46,6 +49,11 @@ impl fmt::Display for SystemError {
             Self::NotFound(p) => write!(f, "not found: {p}"),
             Self::PermissionDenied(p) => write!(f, "permission denied: {p}"),
             Self::PathTraversal(p) => write!(f, "invalid path escaping root: {p}"),
+            Self::SymlinkLoop(p) => write!(
+                f,
+                "too many levels of symbolic links (limit {}): {p}",
+                crate::sys::rootfs::MAX_SYMLINK_HOPS
+            ),
             Self::Io { path, message } => write!(f, "I/O error on {path}: {message}"),
         }
     }
