@@ -4,7 +4,7 @@
 
   <h1>manis</h1>
 
-  <p>Read-only Linux hardening compliance CLI in safe Rust — CIS Ubuntu 24.04 L1 Server, ANSSI-BP-028 v2.0, and NIST SP 800-53.</p>
+  <p>Offline hardening audits for Linux images and rootfs in CI — one static Rust binary, no root, no subprocesses. Mapped to CIS Ubuntu 24.04, ANSSI-BP-028 v2.0 and NIST SP 800-53, with deterministic JSON/SARIF output and <code>manis diff</code>.</p>
 
   <p>
     <a href="https://github.com/ilias-laoukili/manis/actions/workflows/ci.yml"><img src="https://github.com/ilias-laoukili/manis/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
@@ -12,6 +12,8 @@
     <a href="https://github.com/ilias-laoukili/manis/releases"><img src="https://img.shields.io/github/v/release/ilias-laoukili/manis" alt="Release"></a>
   </p>
 </div>
+
+`manis` audits a mounted image, an extracted rootfs or a fixture tree with `--root`, before anything boots. It is built for CI gates on golden images: `manis diff` fails the build on any hardening regression.
 
 Named after *Manis* — the pangolin, the only mammal fully armored in protective scales.
 
@@ -23,13 +25,19 @@ Named after *Manis* — the pangolin, the only mammal fully armored in protectiv
 - **103 embedded declarative rules (`100` automated + `3 MANUAL`) across 14 primitives:** Human-readable TOML rules with verified cross-framework references (`CIS`, `ANSSI-BP-028 v2.0`, `NIST SP 800-53`).
 - **No silent false positives:** Missing files, absent sysctls, or `PermissionDenied` errors emit explicit `WARN` or `FAIL` — never a silent `PASS`. Non-automatable controls are tracked explicitly as `MANUAL`.
 - **CI/DevSecOps native:** Deterministic `table`, `json`, `sarif` (2.1.0 for GitHub Code Scanning), and `markdown` reports, baseline drift detection (`manis diff`), and auditable waivers/overrides (`manis.toml`).
-- **Offline fixture testing:** `--root <path>` runs 100% of rules deterministically against mounted rootfs images or fixture trees on Linux and macOS without root privileges.
+- **Offline fixture testing:** `--root <path>` runs 100% of rules deterministically against mounted rootfs images or fixture trees on Linux and macOS without root privileges. Fixture trees can simulate ownership and SUID bits with an opt-in `.manis-meta.toml` (`--fixture-meta`).
+
+### Scope and limits
+
+- Not a replacement for OpenSCAP or Ubuntu Security Guide on a live server: coverage is partial (103 embedded rules, 93 of them in the default `cis-l1-server` profile) and formal SCAP/OVAL reports are out of scope.
+- Ubuntu 24.04 (dpkg/systemd) only for now.
+- Runtime-only state (`/proc/sys`, `/proc/mounts`) is absent from an offline image: those rules report `WARN`, never `PASS`.
 
 ### Sample Output
 
 ```text
-$ manis audit --root tests/fixtures/ubuntu-default
-manis 0.3.0 | profile: cis-l1-server | root: tests/fixtures/ubuntu-default
+$ manis audit --root tests/fixtures/ubuntu-default --fixture-meta
+manis 0.3.1 | profile: cis-l1-server | root: tests/fixtures/ubuntu-default
 
 ID        STATUS  SEVERITY  REFS               TITLE
 --------  ------  --------  -----------------  -------------------------------------------------------------------
@@ -104,11 +112,14 @@ cargo build --release
 # Default profile: CIS Ubuntu 24.04 LTS Level 1 Server (live host)
 sudo manis audit
 
-# Audit an offline rootfs or fixture directory (no root required)
-manis audit --root tests/fixtures/ubuntu-default
+# Audit a mounted image or extracted rootfs offline (no root required)
+manis audit --root /mnt/image
+
+# Audit a test fixture: --fixture-meta applies its simulated ownership and SUID bits
+manis audit --root tests/fixtures/ubuntu-default --fixture-meta
 
 # Run all 103 rules (including ANSSI-BP-028 reinforced & explicit MANUAL controls)
-manis audit --profile all --root tests/fixtures/ubuntu-hardened
+manis audit --profile all --root tests/fixtures/ubuntu-hardened --fixture-meta
 
 # Emit deterministic JSON, SARIF 2.1.0, or Markdown
 manis audit --format json --output report.json
