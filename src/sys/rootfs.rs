@@ -1,14 +1,44 @@
 //! Filesystem-backed [`SystemView`] supporting both live Linux `/` and `--root <path>` fixtures.
+//!
+//! # Symlink confinement in `--root` mode
+//!
+//! In `--root <path>` mode every virtual path is resolved component by component inside the root
+//! directory, like a `chroot`: absolute symlink targets are re-rooted, `..` never climbs above the
+//! root, and resolution fails with [`SystemError::SymlinkLoop`] after [`MAX_SYMLINK_HOPS`] links.
+//! The host kernel only ever receives paths whose components below the root were checked not to
+//! be symlinks, so no operation can reach a file of the host.
+//!
+//! Limitation: resolution is path based (`openat2` / `O_NOFOLLOW` are not reachable without
+//! `unsafe` code or extra dependencies), so a root modified concurrently during an audit could
+//! race between the check and the use of a component. Audited roots are expected to be static,
+//! ideally mounted read-only.
+//!
+//! Live mode (`/`) is unchanged: the kernel resolves paths against the real host root.
 
 use crate::error::{ManisError, SystemError};
 use crate::sys::{DirEntryInfo, FileMeta, SystemView, WalkReport, WalkedFile};
 use serde::Deserialize;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
+use std::ffi::OsString;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 /// Optional metadata overlay filename recognized ONLY in `--root <path>` mode.
 pub const FIXTURE_META_FILE: &str = ".manis-meta.toml";
+
+/// Maximum number of symbolic links followed while resolving one path in `--root` mode
+/// (the same limit as Linux `MAXSYMLINKS`).
+pub const MAX_SYMLINK_HOPS: usize = 40;
+
+/// Whether a symlink in the final path component is followed during `--root` resolution.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FinalComponent {
+    /// Follow a final symlink (`read_to_string`, `read_bytes`, `exists`, `read_dir`).
+    Follow,
+    /// Keep a final symlink as is, so `lstat` / `readlink` see the link itself (`metadata`,
+    /// `read_link`).
+    NoFollow,
+}
 
 /// Deserialized representation of `.manis-meta.toml` inside a `--root` fixture directory.
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -108,6 +138,9 @@ pub struct RootFsSystemView {
     /// `Some(...)` ONLY when constructed via [`Self::from_root`] and `.manis-meta.toml` exists.
     /// Always `None` in live host mode (`/`).
     overlay: Option<ParsedOverlay>,
+    /// `true` ONLY when constructed via [`Self::from_root`]: paths and symlinks are resolved
+    /// inside `root` (see the module documentation). Always `false` in live host mode (`/`).
+    confined: bool,
 }
 
 impl RootFsSystemView {
@@ -119,11 +152,13 @@ impl RootFsSystemView {
             root: PathBuf::from("/"),
             display_root: "/".to_string(),
             overlay: None,
+            confined: false,
         }
     }
 
     /// Creates an offline view anchored at `root`.
     ///
+    /// Every path, symlinks included, is resolved inside `root` (see the module documentation).
     /// Loads `<root>/.manis-meta.toml` if and only if present inside the fixture directory.
     pub fn from_root(root: impl AsRef<Path>) -> Result<Self, ManisError> {
         let root_path = root.as_ref();
@@ -139,29 +174,41 @@ impl RootFsSystemView {
             )));
         }
 
-        let overlay_path = root_path.join(FIXTURE_META_FILE);
-        let overlay = if overlay_path.is_file() {
-            Some(ParsedOverlay::load(&overlay_path)?)
-        } else {
-            None
-        };
-
-        Ok(Self {
+        let mut view = Self {
             root: root_path.to_path_buf(),
             display_root: root_path.display().to_string(),
-            overlay,
-        })
+            overlay: None,
+            confined: true,
+        };
+
+        // The overlay itself is located through confined resolution, so a symlinked overlay can
+        // never point outside the root. Any resolution error means "no overlay", like a missing
+        // file.
+        if let Ok(overlay_path) =
+            view.host_path(&format!("/{FIXTURE_META_FILE}"), FinalComponent::Follow)
+        {
+            if overlay_path.is_file() {
+                view.overlay = Some(ParsedOverlay::load(&overlay_path)?);
+            }
+        }
+
+        Ok(view)
     }
 
-    fn resolve(&self, vpath: &str) -> Result<(String, PathBuf), SystemError> {
-        let norm = normalize_virtual_path(vpath)?;
+    /// Maps a normalized virtual path to the host path to operate on.
+    ///
+    /// In `--root` mode the path is resolved inside the root by [`resolve_in_root`]; in live mode
+    /// the kernel resolves it against the real `/`, exactly as before.
+    fn host_path(&self, norm: &str, last: FinalComponent) -> Result<PathBuf, SystemError> {
+        if self.confined {
+            return resolve_in_root(&self.root, norm, last);
+        }
         let rel = norm.trim_start_matches('/');
-        let host_path = if rel.is_empty() {
+        Ok(if rel.is_empty() {
             self.root.clone()
         } else {
             self.root.join(rel)
-        };
-        Ok((norm, host_path))
+        })
     }
 
     fn check_overlay_readable(&self, norm: &str) -> Result<(), SystemError> {
@@ -194,124 +241,28 @@ impl RootFsSystemView {
         self.overlay.is_some() && norm == format!("/{FIXTURE_META_FILE}")
     }
 
-    fn walk_dir_recursive(
-        &self,
-        vdir: &str,
-        skip_dirs: &[String],
-        report: &mut WalkReport,
-    ) -> Result<(), SystemError> {
-        if should_skip(vdir, skip_dirs) {
-            return Ok(());
-        }
-        if self.check_overlay_readable(vdir).is_err() {
-            report.unreadable_paths.push(vdir.to_string());
-            return Ok(());
-        }
-
-        let entries = match self.read_dir(vdir) {
-            Ok(list) => list,
-            Err(err) if err.is_permission_denied() => {
-                report.unreadable_paths.push(vdir.to_string());
-                return Ok(());
-            }
-            Err(err) if err.is_not_found() => return Ok(()),
-            Err(err) => {
-                report.unreadable_paths.push(format!("{vdir} ({err})"));
-                return Ok(());
-            }
-        };
-
-        for entry in entries {
-            if self.is_internal_meta_file(&entry.path) {
-                continue;
-            }
-            if entry.is_symlink {
-                continue;
-            }
-            if entry.is_dir {
-                if !should_skip(&entry.path, skip_dirs) {
-                    if let Ok(meta) = self.metadata(&entry.path) {
-                        report.dirs.push(WalkedFile {
-                            path: entry.path.clone(),
-                            meta,
-                        });
-                    }
-                    self.walk_dir_recursive(&entry.path, skip_dirs, report)?;
-                }
-            } else if entry.is_file {
-                match self.metadata(&entry.path) {
-                    Ok(meta) => report.files.push(WalkedFile {
-                        path: entry.path,
-                        meta,
-                    }),
-                    Err(_) => report.unreadable_paths.push(entry.path),
-                }
-            }
-        }
-        Ok(())
-    }
-}
-
-impl SystemView for RootFsSystemView {
-    fn display_root(&self) -> &str {
-        &self.display_root
-    }
-
-    fn read_to_string(&self, path: &str) -> Result<String, SystemError> {
-        let (norm, host_path) = self.resolve(path)?;
-        self.check_overlay_readable(&norm)?;
-        fs::read_to_string(&host_path).map_err(|e| SystemError::from_io(norm, &e))
-    }
-
-    fn read_bytes(&self, path: &str) -> Result<Vec<u8>, SystemError> {
-        let (norm, host_path) = self.resolve(path)?;
-        self.check_overlay_readable(&norm)?;
-        fs::read(&host_path).map_err(|e| SystemError::from_io(norm, &e))
-    }
-
-    fn exists(&self, path: &str) -> bool {
-        self.resolve(path)
-            .is_ok_and(|(norm, host_path)| !self.is_internal_meta_file(&norm) && host_path.exists())
-    }
-
-    fn metadata(&self, path: &str) -> Result<FileMeta, SystemError> {
-        let (norm, host_path) = self.resolve(path)?;
-        let md = fs::symlink_metadata(&host_path).map_err(|e| SystemError::from_io(&norm, &e))?;
+    /// `lstat`-style metadata of an already resolved host path, with fixture overlays applied.
+    fn metadata_at(&self, norm: &str, host_path: &Path) -> Result<FileMeta, SystemError> {
+        let md = fs::symlink_metadata(host_path).map_err(|e| SystemError::from_io(norm, &e))?;
         let mut base = extract_file_meta(&md);
         if self
             .overlay
             .as_ref()
-            .and_then(|o| o.get(&norm))
+            .and_then(|o| o.get(norm))
             .is_some_and(|ov| ov.symlink_target.is_some())
         {
             base.is_symlink = true;
             base.is_file = false;
         }
-        Ok(self.apply_overlay(&norm, base))
+        Ok(self.apply_overlay(norm, base))
     }
 
-    fn read_link(&self, path: &str) -> Result<String, SystemError> {
-        let (norm, host_path) = self.resolve(path)?;
-        self.check_overlay_readable(&norm)?;
-        if let Some(target) = self
-            .overlay
-            .as_ref()
-            .and_then(|o| o.get(&norm))
-            .and_then(|ov| ov.symlink_target.as_ref())
-        {
-            return Ok(target.clone());
-        }
-        let target = fs::read_link(&host_path).map_err(|e| SystemError::from_io(&norm, &e))?;
-        Ok(target.to_string_lossy().into_owned())
-    }
-
-    fn read_dir(&self, path: &str) -> Result<Vec<DirEntryInfo>, SystemError> {
-        let (norm, host_path) = self.resolve(path)?;
-        self.check_overlay_readable(&norm)?;
-        let read = fs::read_dir(&host_path).map_err(|e| SystemError::from_io(&norm, &e))?;
+    /// Sorted listing of an already resolved host directory, hiding the internal overlay file.
+    fn read_dir_at(&self, norm: &str, host_path: &Path) -> Result<Vec<DirEntryInfo>, SystemError> {
+        let read = fs::read_dir(host_path).map_err(|e| SystemError::from_io(norm, &e))?;
         let mut out = Vec::new();
         for item in read {
-            let entry = item.map_err(|e| SystemError::from_io(&norm, &e))?;
+            let entry = item.map_err(|e| SystemError::from_io(norm, &e))?;
             let name = entry.file_name().to_string_lossy().into_owned();
             let vpath = if norm == "/" {
                 format!("/{name}")
@@ -336,6 +287,136 @@ impl SystemView for RootFsSystemView {
         Ok(out)
     }
 
+    /// Recursively walks `vdir`.
+    ///
+    /// `host_dir` is `None` for a walk root, which is resolved once through [`Self::host_path`].
+    /// Descendants are reached by joining entry names onto their already resolved parent:
+    /// symlink entries are never traversed, so no further resolution is needed.
+    fn walk_dir_recursive(
+        &self,
+        vdir: &str,
+        host_dir: Option<&Path>,
+        skip_dirs: &[String],
+        report: &mut WalkReport,
+    ) -> Result<(), SystemError> {
+        if should_skip(vdir, skip_dirs) {
+            return Ok(());
+        }
+        if self.check_overlay_readable(vdir).is_err() {
+            report.unreadable_paths.push(vdir.to_string());
+            return Ok(());
+        }
+
+        let listing = match host_dir {
+            Some(dir) => self
+                .read_dir_at(vdir, dir)
+                .map(|entries| (dir.to_path_buf(), entries)),
+            None => self
+                .host_path(vdir, FinalComponent::Follow)
+                .and_then(|dir| self.read_dir_at(vdir, &dir).map(|entries| (dir, entries))),
+        };
+        let (dir, entries) = match listing {
+            Ok(found) => found,
+            Err(err) if err.is_permission_denied() => {
+                report.unreadable_paths.push(vdir.to_string());
+                return Ok(());
+            }
+            Err(err) if err.is_not_found() => return Ok(()),
+            Err(err) => {
+                report.unreadable_paths.push(format!("{vdir} ({err})"));
+                return Ok(());
+            }
+        };
+
+        for entry in entries {
+            if self.is_internal_meta_file(&entry.path) {
+                continue;
+            }
+            if entry.is_symlink {
+                continue;
+            }
+            let host_entry = dir.join(&entry.name);
+            if entry.is_dir {
+                if !should_skip(&entry.path, skip_dirs) {
+                    if let Ok(meta) = self.metadata_at(&entry.path, &host_entry) {
+                        report.dirs.push(WalkedFile {
+                            path: entry.path.clone(),
+                            meta,
+                        });
+                    }
+                    self.walk_dir_recursive(&entry.path, Some(&host_entry), skip_dirs, report)?;
+                }
+            } else if entry.is_file {
+                match self.metadata_at(&entry.path, &host_entry) {
+                    Ok(meta) => report.files.push(WalkedFile {
+                        path: entry.path,
+                        meta,
+                    }),
+                    Err(_) => report.unreadable_paths.push(entry.path),
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+impl SystemView for RootFsSystemView {
+    fn display_root(&self) -> &str {
+        &self.display_root
+    }
+
+    fn read_to_string(&self, path: &str) -> Result<String, SystemError> {
+        let norm = normalize_virtual_path(path)?;
+        self.check_overlay_readable(&norm)?;
+        let host_path = self.host_path(&norm, FinalComponent::Follow)?;
+        fs::read_to_string(&host_path).map_err(|e| SystemError::from_io(norm, &e))
+    }
+
+    fn read_bytes(&self, path: &str) -> Result<Vec<u8>, SystemError> {
+        let norm = normalize_virtual_path(path)?;
+        self.check_overlay_readable(&norm)?;
+        let host_path = self.host_path(&norm, FinalComponent::Follow)?;
+        fs::read(&host_path).map_err(|e| SystemError::from_io(norm, &e))
+    }
+
+    fn exists(&self, path: &str) -> bool {
+        normalize_virtual_path(path).is_ok_and(|norm| {
+            !self.is_internal_meta_file(&norm)
+                && self
+                    .host_path(&norm, FinalComponent::Follow)
+                    .is_ok_and(|host_path| host_path.exists())
+        })
+    }
+
+    fn metadata(&self, path: &str) -> Result<FileMeta, SystemError> {
+        let norm = normalize_virtual_path(path)?;
+        let host_path = self.host_path(&norm, FinalComponent::NoFollow)?;
+        self.metadata_at(&norm, &host_path)
+    }
+
+    fn read_link(&self, path: &str) -> Result<String, SystemError> {
+        let norm = normalize_virtual_path(path)?;
+        self.check_overlay_readable(&norm)?;
+        if let Some(target) = self
+            .overlay
+            .as_ref()
+            .and_then(|o| o.get(&norm))
+            .and_then(|ov| ov.symlink_target.as_ref())
+        {
+            return Ok(target.clone());
+        }
+        let host_path = self.host_path(&norm, FinalComponent::NoFollow)?;
+        let target = fs::read_link(&host_path).map_err(|e| SystemError::from_io(&norm, &e))?;
+        Ok(target.to_string_lossy().into_owned())
+    }
+
+    fn read_dir(&self, path: &str) -> Result<Vec<DirEntryInfo>, SystemError> {
+        let norm = normalize_virtual_path(path)?;
+        self.check_overlay_readable(&norm)?;
+        let host_path = self.host_path(&norm, FinalComponent::Follow)?;
+        self.read_dir_at(&norm, &host_path)
+    }
+
     fn walk_files(&self, roots: &[&str], skip_dirs: &[&str]) -> Result<WalkReport, SystemError> {
         let norm_skips: Vec<String> = skip_dirs
             .iter()
@@ -345,7 +426,7 @@ impl SystemView for RootFsSystemView {
         let mut report = WalkReport::default();
         for root in roots {
             let norm = normalize_virtual_path(root)?;
-            self.walk_dir_recursive(&norm, &norm_skips, &mut report)?;
+            self.walk_dir_recursive(&norm, None, &norm_skips, &mut report)?;
         }
         report.files.sort_by(|a, b| a.path.cmp(&b.path));
         report.dirs.sort_by(|a, b| a.path.cmp(&b.path));
@@ -409,6 +490,74 @@ pub fn normalize_virtual_path(vpath: &str) -> Result<String, SystemError> {
     } else {
         Ok(format!("/{}", parts.join("/")))
     }
+}
+
+/// Resolves a normalized virtual path inside `root`, never leaving it (see the module docs).
+///
+/// Each component is inspected with `lstat` from `root` downwards and symlinks are expanded in
+/// user space: an absolute target restarts from `root`, `..` stops at `root` (like `chroot`), and
+/// more than [`MAX_SYMLINK_HOPS`] links fail with [`SystemError::SymlinkLoop`]. With
+/// [`FinalComponent::NoFollow`] a final symlink is kept as is.
+fn resolve_in_root(root: &Path, norm: &str, last: FinalComponent) -> Result<PathBuf, SystemError> {
+    let mut resolved: Vec<OsString> = Vec::new();
+    let mut pending: VecDeque<OsString> = norm
+        .split('/')
+        .filter(|part| !part.is_empty())
+        .map(OsString::from)
+        .collect();
+    let mut hops = 0;
+
+    while let Some(component) = pending.pop_front() {
+        if component == ".." {
+            // Only symlink targets produce `..`; it is clamped at the root, like `chroot`.
+            resolved.pop();
+            continue;
+        }
+        if pending.is_empty() && last == FinalComponent::NoFollow {
+            resolved.push(component);
+            break;
+        }
+
+        let candidate = join_under(root, &resolved).join(&component);
+        let meta = fs::symlink_metadata(&candidate).map_err(|e| SystemError::from_io(norm, &e))?;
+        if meta.file_type().is_symlink() {
+            hops += 1;
+            if hops > MAX_SYMLINK_HOPS {
+                return Err(SystemError::SymlinkLoop(norm.to_string()));
+            }
+            let target = fs::read_link(&candidate).map_err(|e| SystemError::from_io(norm, &e))?;
+            if target.has_root() {
+                // Absolute targets are re-rooted: `/x` means `<root>/x`.
+                resolved.clear();
+            }
+            let mut expanded: VecDeque<OsString> = target
+                .components()
+                .filter_map(|c| match c {
+                    Component::Normal(part) => Some(part.to_os_string()),
+                    Component::ParentDir => Some(OsString::from("..")),
+                    Component::RootDir | Component::CurDir | Component::Prefix(_) => None,
+                })
+                .collect();
+            expanded.extend(pending);
+            pending = expanded;
+        } else if !pending.is_empty() && !meta.is_dir() {
+            return Err(SystemError::Io {
+                path: norm.to_string(),
+                message: "not a directory".to_string(),
+            });
+        } else {
+            resolved.push(component);
+        }
+    }
+
+    Ok(join_under(root, &resolved))
+}
+
+/// Joins already resolved components (none of them a symlink) under `root`.
+fn join_under(root: &Path, components: &[OsString]) -> PathBuf {
+    let mut path = root.to_path_buf();
+    path.extend(components);
+    path
 }
 
 fn should_skip(vdir: &str, skip_dirs: &[String]) -> bool {
@@ -502,5 +651,239 @@ unreadable = true
         let live = RootFsSystemView::live();
         assert!(live.overlay.is_none());
         assert_eq!(live.display_root(), "/");
+    }
+
+    #[test]
+    fn live_mode_keeps_kernel_path_resolution() {
+        let live = RootFsSystemView::live();
+        assert!(!live.confined);
+        assert_eq!(
+            live.host_path("/etc/hosts", FinalComponent::Follow)
+                .expect("host path"),
+            PathBuf::from("/etc/hosts")
+        );
+
+        let dir = tempdir().expect("tempdir");
+        let view = RootFsSystemView::from_root(dir.path()).expect("root view");
+        assert!(view.confined);
+    }
+
+    #[cfg(unix)]
+    fn write_file(root: &Path, rel: &str, content: &str) {
+        let path = root.join(rel);
+        fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
+        fs::write(path, content).expect("write");
+    }
+
+    #[cfg(unix)]
+    fn make_link(root: &Path, rel: &str, target: impl AsRef<Path>) {
+        let path = root.join(rel);
+        fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
+        std::os::unix::fs::symlink(target, path).expect("symlink");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn absolute_symlink_to_host_file_is_resolved_inside_root() {
+        let host = tempdir().expect("host dir");
+        write_file(host.path(), "secret.txt", "HOST-SECRET");
+        let root = tempdir().expect("root");
+        make_link(root.path(), "etc/leak", host.path().join("secret.txt"));
+
+        let view = RootFsSystemView::from_root(root.path()).expect("root view");
+        assert!(matches!(
+            view.read_to_string("/etc/leak"),
+            Err(SystemError::NotFound(_))
+        ));
+        assert!(matches!(
+            view.read_bytes("/etc/leak"),
+            Err(SystemError::NotFound(_))
+        ));
+        assert!(!view.exists("/etc/leak"));
+        // The link itself stays visible as a link.
+        assert!(view.metadata("/etc/leak").expect("lstat").is_symlink);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn absolute_symlink_inside_root_reads_root_target() {
+        let root = tempdir().expect("root");
+        write_file(root.path(), "etc/b", "inside");
+        make_link(root.path(), "etc/a", "/etc/b");
+
+        let view = RootFsSystemView::from_root(root.path()).expect("root view");
+        assert_eq!(view.read_to_string("/etc/a").expect("read"), "inside");
+        assert_eq!(view.read_bytes("/etc/a").expect("read"), b"inside");
+        assert!(view.exists("/etc/a"));
+        assert!(view.metadata("/etc/a").expect("lstat").is_symlink);
+        assert_eq!(view.read_link("/etc/a").expect("readlink"), "/etc/b");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn relative_symlink_cannot_escape_root() {
+        let root = tempdir().expect("root");
+        // `deep` has enough `..` to climb from any temporary directory up to the host `/`.
+        let deep = format!("{}etc/passwd", "../".repeat(64));
+        make_link(root.path(), "etc/short", "../../../../etc/passwd");
+        make_link(root.path(), "etc/deep", &deep);
+
+        let view = RootFsSystemView::from_root(root.path()).expect("root view");
+        // Without `<root>/etc/passwd`, nothing is read: the host file is never reached.
+        for path in ["/etc/short", "/etc/deep"] {
+            assert!(
+                matches!(view.read_to_string(path), Err(SystemError::NotFound(_))),
+                "{path}"
+            );
+            assert!(!view.exists(path), "{path}");
+        }
+
+        // `..` stops at the root, exactly as the booted image would see it.
+        write_file(root.path(), "etc/passwd", "image-passwd");
+        for path in ["/etc/short", "/etc/deep"] {
+            assert_eq!(view.read_to_string(path).expect("read"), "image-passwd");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn intermediate_absolute_symlink_directory_is_confined() {
+        let host = tempdir().expect("host dir");
+        write_file(host.path(), "secret.txt", "HOST-SECRET");
+        let root = tempdir().expect("root");
+        write_file(root.path(), "real/conf/app.conf", "inside");
+        make_link(root.path(), "etc/app", "/real/conf");
+        make_link(root.path(), "etc/hostdir", host.path());
+
+        let view = RootFsSystemView::from_root(root.path()).expect("root view");
+        assert_eq!(
+            view.read_to_string("/etc/app/app.conf").expect("read"),
+            "inside"
+        );
+        let names: Vec<String> = view
+            .read_dir("/etc/app")
+            .expect("read_dir")
+            .into_iter()
+            .map(|e| e.name)
+            .collect();
+        assert_eq!(names, vec!["app.conf".to_string()]);
+        assert!(
+            view.metadata("/etc/app/app.conf")
+                .expect("metadata")
+                .is_file
+        );
+
+        assert!(matches!(
+            view.read_to_string("/etc/hostdir/secret.txt"),
+            Err(SystemError::NotFound(_))
+        ));
+        assert!(matches!(
+            view.read_dir("/etc/hostdir"),
+            Err(SystemError::NotFound(_))
+        ));
+        assert!(matches!(
+            view.metadata("/etc/hostdir/secret.txt"),
+            Err(SystemError::NotFound(_))
+        ));
+        assert!(!view.exists("/etc/hostdir/secret.txt"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_loops_fail_cleanly() {
+        let root = tempdir().expect("root");
+        make_link(root.path(), "a", "b");
+        make_link(root.path(), "b", "a");
+        make_link(root.path(), "etc/passwd", "/etc/passwd");
+
+        let view = RootFsSystemView::from_root(root.path()).expect("root view");
+        for path in ["/a", "/b", "/a/child", "/etc/passwd"] {
+            assert!(
+                matches!(view.read_to_string(path), Err(SystemError::SymlinkLoop(_))),
+                "{path}"
+            );
+            assert!(!view.exists(path), "{path}");
+        }
+        assert!(matches!(
+            view.read_dir("/a"),
+            Err(SystemError::SymlinkLoop(_))
+        ));
+        // `lstat` and `readlink` still see the link itself.
+        assert!(view.metadata("/a").expect("lstat").is_symlink);
+        assert_eq!(view.read_link("/a").expect("readlink"), "b");
+    }
+
+    #[cfg(unix)]
+    fn make_link_chain(root: &Path, prefix: &str, len: usize) {
+        for i in 0..len {
+            let next = if i + 1 == len {
+                "target".to_string()
+            } else {
+                format!("{prefix}{}", i + 1)
+            };
+            make_link(root, &format!("{prefix}{i}"), next);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_hop_limit_is_explicit() {
+        let root = tempdir().expect("root");
+        write_file(root.path(), "target", "end");
+        make_link_chain(root.path(), "ok", MAX_SYMLINK_HOPS);
+        make_link_chain(root.path(), "ko", MAX_SYMLINK_HOPS + 1);
+
+        let view = RootFsSystemView::from_root(root.path()).expect("root view");
+        assert_eq!(view.read_to_string("/ok0").expect("40 hops"), "end");
+        assert!(matches!(
+            view.read_to_string("/ko0"),
+            Err(SystemError::SymlinkLoop(_))
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn walk_never_traverses_symlinks_out_of_root() {
+        let host = tempdir().expect("host dir");
+        write_file(host.path(), "secret.txt", "HOST-SECRET");
+        let root = tempdir().expect("root");
+        write_file(root.path(), "usr/bin/tool", "bin");
+        make_link(root.path(), "hostdir", host.path());
+        make_link(root.path(), "bin", "usr/bin");
+
+        let view = RootFsSystemView::from_root(root.path()).expect("root view");
+        let full = view.walk_files(&["/"], &[]).expect("walk");
+        let files: Vec<&str> = full.files.iter().map(|f| f.path.as_str()).collect();
+        assert_eq!(files, vec!["/usr/bin/tool"]);
+        assert!(full.unreadable_paths.is_empty());
+
+        // A walk root that is itself a symlink is resolved inside the root.
+        let via_host_link = view.walk_files(&["/hostdir"], &[]).expect("walk");
+        assert!(via_host_link.files.is_empty());
+        let via_bin = view.walk_files(&["/bin"], &[]).expect("walk");
+        let bin_files: Vec<&str> = via_bin.files.iter().map(|f| f.path.as_str()).collect();
+        assert_eq!(bin_files, vec!["/bin/tool"]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_overlay_pointing_outside_root_is_ignored() {
+        let host = tempdir().expect("host dir");
+        write_file(
+            host.path(),
+            "meta.toml",
+            "[files.\"/etc/sudoers\"]\nunreadable = true\n",
+        );
+        let root = tempdir().expect("root");
+        write_file(root.path(), "etc/sudoers", "root ALL=(ALL) ALL\n");
+        make_link(
+            root.path(),
+            FIXTURE_META_FILE,
+            host.path().join("meta.toml"),
+        );
+
+        let view = RootFsSystemView::from_root(root.path()).expect("root view");
+        assert!(view.overlay.is_none());
+        assert!(view.read_to_string("/etc/sudoers").is_ok());
     }
 }

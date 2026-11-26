@@ -79,6 +79,9 @@ pub struct WalkReport {
 }
 
 /// Read-only abstraction over a Linux host filesystem or `--root` fixture tree.
+///
+/// In `--root` mode every path is resolved inside the root directory, including the symlinks met
+/// along the way: no operation may ever reach a file of the host.
 pub trait SystemView {
     /// Human-readable display root (`/` for live host, or the `--root` path).
     fn display_root(&self) -> &str;
@@ -92,10 +95,12 @@ pub trait SystemView {
     /// Returns `true` if a file or directory exists at the virtual path.
     fn exists(&self, path: &str) -> bool;
 
-    /// Reads file metadata (mode, uid, gid, file type) without following symlinks.
+    /// Reads file metadata (mode, uid, gid, file type) without following a final symlink.
     fn metadata(&self, path: &str) -> Result<FileMeta, SystemError>;
 
     /// Reads the target of a symbolic link at the virtual path (e.g. `/dev/null` for a masked unit).
+    ///
+    /// The target is returned verbatim, never resolved.
     fn read_link(&self, path: &str) -> Result<String, SystemError>;
 
     /// Lists entries in a directory sorted lexicographically by name.

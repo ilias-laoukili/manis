@@ -42,6 +42,7 @@ Embedded TOML Rules & Profiles (103 rules) + Optional User Config (manis.toml)
 
 - Every check primitive inspects the target system strictly through `SystemView` (`read_to_string`, `read_bytes`, `metadata`, `read_link`, `read_dir`, `walk_files`, `kernel_release`).
 - Virtual paths are confined inside the configured root directory (`..` traversal is rejected).
+- In `--root <path>` mode, symlinks are resolved component by component inside the root, like a `chroot`: absolute targets are re-rooted, `..` in a target stops at the root, and more than 40 links is an error. No read can reach a host file. Live mode (`/`) keeps kernel path resolution.
 - In `--root <path>` fixture mode only, an optional `.manis-meta.toml` overlay may specify simulated Unix permission modes, `uid`/`gid`, `unreadable = true`, or `symlink_target` (since Git does not store SUID/SGID bits or ownership). Live mode (`/`) **never** reads `.manis-meta.toml`.
 
 ### Status Semantics (No False Positives)

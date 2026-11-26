@@ -345,6 +345,38 @@ fn empty_root_never_produces_false_pass_on_missing_configs() {
     }
 }
 
+#[cfg(unix)]
+#[test]
+fn root_of_absolute_symlinks_into_host_tree_audits_like_empty_root() {
+    // Every top-level entry is an absolute symlink to the hardened fixture on the host. If
+    // `--root` followed those links on the host, most rules would PASS from the hardened tree.
+    let hardened = fixture_path("ubuntu-hardened");
+    let dir = tempdir().expect("tempdir");
+    for entry in std::fs::read_dir(&hardened).expect("read hardened fixture") {
+        let entry = entry.expect("fixture entry");
+        std::os::unix::fs::symlink(entry.path(), dir.path().join(entry.file_name()))
+            .expect("symlink");
+    }
+
+    let registry = RuleRegistry::load_embedded().expect("registry");
+    let view = RootFsSystemView::from_root(dir.path()).expect("view");
+    let report = run_audit(&registry, "all", &view).expect("audit");
+
+    assert_eq!(report.summary.total, 103);
+    for res in &report.results {
+        if res.id == "FS-002" {
+            assert_eq!(res.status, Status::Pass);
+        } else {
+            assert_ne!(
+                res.status,
+                Status::Pass,
+                "rule {} must not PASS from a host file reached through a symlink",
+                res.id
+            );
+        }
+    }
+}
+
 #[test]
 fn cli_list_explain_config_and_error_exit_codes() {
     let list_out = manis_bin().arg("list").output().expect("manis list");
