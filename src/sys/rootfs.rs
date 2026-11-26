@@ -916,11 +916,11 @@ unreadable = true
         let full = view.walk_files(&["/"], &[]).expect("walk");
         let files: Vec<&str> = full.files.iter().map(|f| f.path.as_str()).collect();
         assert_eq!(files, vec!["/usr/bin/tool"]);
-        assert!(full.unreadable_paths.is_empty());
+        assert_eq!(full.unreadable_paths, Vec::<String>::new());
 
         // A walk root that is itself a symlink is resolved inside the root.
         let via_host_link = view.walk_files(&["/hostdir"], &[]).expect("walk");
-        assert!(via_host_link.files.is_empty());
+        assert_eq!(via_host_link.files, Vec::new());
         let via_bin = view.walk_files(&["/bin"], &[]).expect("walk");
         let bin_files: Vec<&str> = via_bin.files.iter().map(|f| f.path.as_str()).collect();
         assert_eq!(bin_files, vec!["/bin/tool"]);
