@@ -2,7 +2,7 @@ id = "AUTH-004"
 title = "Configure minimum days between password changes (PASS_MIN_DAYS)"
 description = "Verifies that PASS_MIN_DAYS in /etc/login.defs is set to 1 or greater to prevent rapid password cycling."
 severity = "low"
-profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced"]
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced", "linux-generic"]
 remediation = """
 Set PASS_MIN_DAYS to 1 or greater in /etc/login.defs:
   PASS_MIN_DAYS 1

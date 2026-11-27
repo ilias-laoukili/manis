@@ -190,3 +190,232 @@ jobs:
           print(f"Live Docker diff verified: {fixed} rules fixed, 0 regressions.")
           PY
           '
+
+  docker-debian:
+    name: Live Debian Docker Integration (${{ matrix.image }})
+    runs-on: ubuntu-24.04
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ["debian:bookworm", "debian:trixie"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install musl tools
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq musl-tools
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+
+      - name: Cache Cargo registry and target
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build static musl binary (runs on any distribution)
+        run: |
+          cargo build --release --locked --target x86_64-unknown-linux-musl
+          mkdir -p /tmp/manis-ci
+          cp target/x86_64-unknown-linux-musl/release/manis /tmp/manis-ci/manis
+          chmod 0755 /tmp/manis-ci/manis
+
+      - name: Run live non-root, root, linux-generic, SARIF, hardened pass & diff inside ${{ matrix.image }}
+        run: |
+          cat >/tmp/manis-ci/live.sh <<'SCRIPT'
+          set -euxo pipefail
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends sudo openssh-server python3 libpam-pwquality auditd >/dev/null
+
+          # 1. Non-root live run: unreadable /etc/shadow & /etc/sudoers must WARN (never PASS)
+          su -s /bin/bash nobody -c "/work/manis audit --format json --output /tmp/nonroot.json || true"
+          python3 - <<'PY'
+          import json
+          by_id = {r["id"]: r["status"] for r in json.load(open("/tmp/nonroot.json"))["results"]}
+          assert by_id["AUTH-006"] == "WARN", f"expected WARN on /etc/shadow as nobody, got {by_id['AUTH-006']}"
+          assert by_id["SUDO-003"] == "WARN", f"expected WARN on /etc/sudoers as nobody, got {by_id['SUDO-003']}"
+          print("Non-root live WARN checks passed.")
+          PY
+
+          # 2. Root live baseline: container-absent controls never PASS, stock Debian APT sources are trusted
+          /work/manis audit --format json --output /work/baseline.json || true
+          python3 - <<'PY'
+          import json
+          by_id = {r["id"]: r["status"] for r in json.load(open("/work/baseline.json"))["results"]}
+          for rule_id in ["BOOT-001", "BOOT-002", "FW-002"]:
+              assert by_id[rule_id] != "PASS", f"container-absent control {rule_id} must never silently PASS"
+          assert by_id["PKG-001"] == "PASS", f"stock Debian APT sources must be trusted, got {by_id['PKG-001']}"
+          print("Container no-false-PASS and Debian APT checks passed.")
+          PY
+
+          # 3. The linux-generic profile runs cleanly on the live Debian system
+          /work/manis audit --profile linux-generic --format json --output /work/generic.json || true
+          python3 - <<'PY'
+          import json
+          rep = json.load(open("/work/generic.json"))
+          errors = [r["id"] for r in rep["results"] if r["status"] == "ERROR"]
+          assert not errors, f"linux-generic ERROR results: {errors}"
+          assert rep["summary"]["total"] == 73, rep["summary"]
+          print(f"linux-generic live run verified: {rep['summary']}")
+          PY
+
+          # 4. Validate SARIF 2.1.0 output structure & mandatory locations
+          /work/manis audit --format sarif --output /work/baseline.sarif || true
+          python3 - <<'PY'
+          import json
+          sarif = json.load(open("/work/baseline.sarif"))
+          assert sarif["version"] == "2.1.0"
+          results = sarif["runs"][0]["results"]
+          assert len(results) > 0
+          for r in results:
+              uri = r["locations"][0]["physicalLocation"]["artifactLocation"]["uri"]
+              assert uri and not uri.startswith("/"), f"bad SARIF URI: {uri}"
+          print(f"SARIF 2.1.0 verified ({len(results)} findings with valid locations).")
+          PY
+
+          # 5. Container-compatible hardening pass (same as the Ubuntu job)
+          chmod 0600 /etc/ssh/sshd_config
+          chown root:root /etc/ssh/sshd_config
+          cat <<EOF >/etc/ssh/sshd_config.d/01-hardening.conf
+          PermitRootLogin no
+          PermitEmptyPasswords no
+          MaxAuthTries 4
+          LoginGraceTime 60
+          ClientAliveInterval 300
+          ClientAliveCountMax 0
+          LogLevel VERBOSE
+          IgnoreRhosts yes
+          HostbasedAuthentication no
+          GSSAPIAuthentication no
+          PermitUserEnvironment no
+          UsePAM yes
+          DisableForwarding yes
+          Banner /etc/issue.net
+          Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com
+          MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com
+          KexAlgorithms curve25519-sha256,diffie-hellman-group16-sha512
+          EOF
+          chmod 0640 /etc/shadow
+          chmod 0644 /etc/passwd /etc/group
+          cat <<EOF >/etc/sudoers.d/99-hardening
+          Defaults use_pty
+          Defaults logfile="/var/log/sudo.log"
+          Defaults timestamp_timeout=15
+          EOF
+          chmod 0440 /etc/sudoers.d/99-hardening
+          printf "TMOUT=600\nreadonly TMOUT\nexport TMOUT\n" >/etc/profile.d/99-tmout.sh
+          sed -i "s/^UMASK.*/UMASK 077/" /etc/login.defs
+          echo "Authorized access only." >/etc/issue
+          echo "Authorized access only." >/etc/issue.net
+          cat <<EOF >/etc/security/pwquality.conf
+          minlen = 14
+          minclass = 4
+          EOF
+          cat <<EOF >/etc/security/faillock.conf
+          deny = 5
+          unlock_time = 900
+          EOF
+          mkdir -p /etc/systemd/journald.conf.d /etc/audit/rules.d
+          cat <<EOF >/etc/systemd/journald.conf.d/99-manis.conf
+          [Journal]
+          Storage=persistent
+          Compress=yes
+          EOF
+          cat <<EOF >/etc/audit/auditd.conf
+          max_log_file = 32
+          max_log_file_action = keep_logs
+          disk_full_action = halt
+          EOF
+          cat <<EOF >/etc/audit/rules.d/50-hardening.rules
+          -w /etc/sudoers -p wa -k scope
+          -w /etc/passwd -p wa -k identity
+          -w /etc/localtime -p wa -k time-change
+          -a always,exit -F arch=b64 -S init_module -k modules
+          -e 2
+          EOF
+
+          # 6. Audit the hardened container & run manis diff
+          /work/manis audit --format json --output /work/hardened.json || true
+          /work/manis diff /work/baseline.json /work/hardened.json --format json --no-fail --output /work/diff.json
+          /work/manis diff /work/baseline.json /work/hardened.json --no-fail
+          python3 - <<'PY'
+          import json
+          summary = json.load(open("/work/diff.json"))["summary"]
+          assert summary["regressions"] == 0, f"unexpected regressions: {summary}"
+          assert summary["fixed"] >= 20, f"expected >= 20 fixed rules, got {summary}"
+          print(f"Live Docker diff verified: {summary['fixed']} rules fixed, 0 regressions.")
+          PY
+          SCRIPT
+          docker run --rm -v /tmp/manis-ci:/work "${{ matrix.image }}" bash /work/live.sh
+
+      - name: Offline --root audit of the exported ${{ matrix.image }} rootfs (non-root)
+        run: |
+          docker create --name rootfs-src "${{ matrix.image }}"
+          sudo mkdir -p /tmp/rootfs
+          docker export rootfs-src | sudo tar -xpf - -C /tmp/rootfs
+          docker rm rootfs-src
+          /tmp/manis-ci/manis audit --root /tmp/rootfs --profile all --format json --output /tmp/offline.json || true
+          /tmp/manis-ci/manis audit --root /tmp/rootfs --profile linux-generic --format json --output /tmp/offline-generic.json || true
+          python3 - <<'PY'
+          import json
+          full = json.load(open("/tmp/offline.json"))
+          by_id = {r["id"]: r["status"] for r in full["results"]}
+          errors = [r["id"] for r in full["results"] if r["status"] == "ERROR"]
+          assert not errors, f"ERROR results: {errors}"
+          assert by_id["PKG-001"] == "PASS", f"Debian APT sources in the image must be trusted, got {by_id['PKG-001']}"
+          assert by_id["AUTH-006"] == "WARN", f"/etc/shadow is unreadable for the runner: expected WARN, got {by_id['AUTH-006']}"
+          assert by_id["KERN-001"] == "WARN", f"an offline image has no /proc/sys: expected WARN, got {by_id['KERN-001']}"
+          generic = json.load(open("/tmp/offline-generic.json"))["summary"]
+          assert generic["total"] == 73 and generic["error"] == 0, generic
+          print("Offline --root audit of the exported Debian rootfs verified.")
+          PY
+
+  rootfs-linux-generic:
+    name: linux-generic on non-Debian rootfs (${{ matrix.image }})
+    runs-on: ubuntu-24.04
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ["alpine:3", "rockylinux:9"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install musl tools
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq musl-tools
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+
+      - name: Cache Cargo registry and target
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build static musl binary (runs on any distribution)
+        run: cargo build --release --locked --target x86_64-unknown-linux-musl
+
+      - name: Offline linux-generic audit of the exported ${{ matrix.image }} rootfs
+        run: |
+          docker create --name rootfs-src "${{ matrix.image }}"
+          sudo mkdir -p /tmp/rootfs
+          docker export rootfs-src | sudo tar -xpf - -C /tmp/rootfs
+          docker rm rootfs-src
+          set +e
+          target/x86_64-unknown-linux-musl/release/manis audit --root /tmp/rootfs --profile linux-generic --format json --output /tmp/generic.json
+          code=$?
+          set -e
+          test "$code" -eq 0 -o "$code" -eq 1
+          python3 - <<'PY'
+          import json
+          rep = json.load(open("/tmp/generic.json"))
+          errors = [r["id"] for r in rep["results"] if r["status"] == "ERROR"]
+          assert not errors, f"ERROR results: {errors}"
+          assert rep["summary"]["total"] == 73, rep["summary"]
+          print(f"linux-generic ran cleanly: {rep['summary']}")
+          PY

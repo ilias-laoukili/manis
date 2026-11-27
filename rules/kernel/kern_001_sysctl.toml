@@ -2,7 +2,7 @@ id = "KERN-001"
 title = "Kernel sysctl hardening parameters"
 description = "Verifies core Linux kernel runtime parameters restricting dmesg access, kernel pointer exposure, ASLR, SysRq, unprivileged eBPF, perf events, and panic behavior."
 severity = "high"
-profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced"]
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced", "linux-generic"]
 
 remediation = """
 Create /etc/sysctl.d/99-manis-kernel.conf with:

@@ -2,7 +2,7 @@ id = "FS-008"
 title = "Disable unused filesystem kernel module (udf)"
 description = "Verifies that the legacy/uncommon 'udf' filesystem kernel module is disabled via /etc/modprobe.d/*.conf to reduce kernel attack surface."
 severity = "low"
-profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced"]
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced", "linux-generic"]
 artifact_uri = "etc/modprobe.d/cis-filesystems.conf"
 remediation = """
 Add the following lines to /etc/modprobe.d/cis-filesystems.conf:

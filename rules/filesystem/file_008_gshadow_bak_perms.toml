@@ -2,7 +2,7 @@ id = "FILE-008"
 title = "Restrict permissions and ownership on /etc/gshadow-"
 description = "Verifies that /etc/gshadow- is owned by root (allowed GIDs [0, 42]) with permissions no more permissive than 0640."
 severity = "medium"
-profiles = ["cis-l1-server", "anssi-minimal", "anssi-intermediary", "anssi-reinforced"]
+profiles = ["cis-l1-server", "anssi-minimal", "anssi-intermediary", "anssi-reinforced", "linux-generic"]
 remediation = """
 Enforce ownership and restrictive permissions on /etc/gshadow-:
   sudo chown root:shadow /etc/gshadow-

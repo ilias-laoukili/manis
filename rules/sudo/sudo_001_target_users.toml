@@ -2,7 +2,7 @@ id = "SUDO-001"
 title = "Restrict broad root sudoers grants"
 description = "Verifies that /etc/sudoers and /etc/sudoers.d/* do not grant unrestricted root command execution ((ALL) ALL or (root) ALL) to non-root principals."
 severity = "high"
-profiles = ["anssi-minimal", "anssi-intermediary", "anssi-reinforced"]
+profiles = ["anssi-minimal", "anssi-intermediary", "anssi-reinforced", "linux-generic"]
 
 remediation = """
 Audit sudoers rules with 'sudo visudo' and replace broad grants such as '%sudo ALL=(ALL:ALL) ALL' with least-privilege rules specifying explicit target users and exact command paths.

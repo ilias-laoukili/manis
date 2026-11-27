@@ -2,7 +2,7 @@ id = "KERN-003"
 title = "Kernel module cryptographic signature enforcement"
 description = "Verifies that the running kernel was compiled with mandatory SHA-512 module signature verification and strict RWX permissions for loaded modules."
 severity = "high"
-profiles = ["anssi-reinforced"]
+profiles = ["anssi-reinforced", "linux-generic"]
 
 remediation = """
 Kernel compilation options cannot be altered at runtime. Build or install a signed hardened kernel with:

@@ -136,6 +136,67 @@ pub fn evaluate_rule(
     }
 }
 
+/// Returns every path a check may read: the paths written in the rule plus the implicit
+/// defaults of its primitive (e.g. `/var/lib/dpkg/status`, APT source files, UFW configuration).
+///
+/// Wildcards are kept as written (e.g. `/etc/profile.d/*.sh`), and release-dependent kernel
+/// paths use `*` for the release. Profile invariants such as `linux-generic` having no
+/// distribution-specific dependency are enforced on this list.
+pub fn referenced_paths(check: &CheckSpec) -> Vec<String> {
+    let owned = |paths: &[&str]| paths.iter().map(ToString::to_string).collect::<Vec<_>>();
+    let mut paths = match check {
+        CheckSpec::Sysctl(spec) => {
+            let mut paths: Vec<String> = spec
+                .params
+                .iter()
+                .chain(&spec.pass_if_sysctl)
+                .map(|param| sysctl::sysctl_key_to_path(&param.key))
+                .collect();
+            if !spec.pass_if_cmdline_contains.is_empty() {
+                paths.push("/proc/cmdline".to_string());
+            }
+            paths
+        }
+        CheckSpec::KernelConfig(_) => owned(&[
+            "/boot/config-*",
+            "/proc/config.gz",
+            "/lib/modules/*/build/.config",
+            "/proc/sys/kernel/osrelease",
+        ]),
+        CheckSpec::MountOptions(_) => owned(&["/proc/mounts"]),
+        CheckSpec::SshdConfig(spec) => vec![spec.file.clone()],
+        CheckSpec::FileMeta(spec) => vec![spec.path.clone()],
+        CheckSpec::FileContent(spec) => spec
+            .paths
+            .iter()
+            .chain(&spec.strict_paths)
+            .chain(&spec.pam_paths)
+            .cloned()
+            .collect(),
+        CheckSpec::Sudoers(spec) => vec![spec.file.clone(), spec.include_dir.clone()],
+        CheckSpec::SuidSgid(spec) => spec.search_roots.clone(),
+        CheckSpec::WorldWritable(spec) => spec.search_roots.clone(),
+        CheckSpec::PackageRepos(_) => [
+            package_repos::APT_LIST_PATTERNS,
+            package_repos::APT_DEB822_PATTERNS,
+            package_repos::YUM_REPO_PATTERNS,
+            package_repos::APT_CONF_PATTERNS,
+            package_repos::YUM_GLOBAL_CONF_PATHS,
+        ]
+        .concat()
+        .iter()
+        .map(ToString::to_string)
+        .collect(),
+        CheckSpec::PackageState(spec) => vec![spec.dpkg_status_path.clone()],
+        CheckSpec::ServiceState(spec) => vec![spec.systemd_dir.clone()],
+        CheckSpec::FirewallConfig(_) => owned(firewall_config::CONFIG_PATHS),
+        CheckSpec::Manual(_) => Vec::new(),
+    };
+    paths.sort();
+    paths.dedup();
+    paths
+}
+
 /// Expands a list of virtual paths, supporting a single `*` wildcard in the final path component
 /// (e.g. `/etc/profile.d/*.sh`), while recording any permission-denied directories.
 pub(crate) fn expand_virtual_paths(

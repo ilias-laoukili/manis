@@ -18,6 +18,12 @@ Existing Linux auditing tools leave a practical gap for modern DevSecOps, golden
 3. CI-native deterministic outputs (`table`, `json`, `sarif` 2.1.0, `markdown`), baseline drift detection (`diff`), and auditable waivers/overrides (`manis.toml`).
 4. Full offline testability via `--root <path>` against fixture filesystems or mounted rootfs images on Linux and macOS without root privileges.
 
+### Supported Systems
+
+- **Debian family (full catalog):** Ubuntu 24.04 LTS, Debian 12 (bookworm) and Debian 13 (trixie) share the dpkg/APT/systemd layout, PAM `common-*` files, GRUB, AppArmor and shadow `gid 42` that the rules inspect. CI runs live audits in Ubuntu 24.04, Debian 12 and Debian 13 containers, and audits the exported Debian 12 and 13 root filesystems offline with `--root`.
+- **Benchmark references:** CIS identifiers come from the `CIS Ubuntu Linux 24.04 LTS Benchmark v1.0.0` only. On Debian the same controls apply as written; no CIS Debian benchmark mapping is claimed.
+- **Any other Linux distribution:** the `linux-generic` profile (73 rules) keeps only rules with no dpkg, APT, UFW, AppArmor or `/etc/pam.d/common-*` dependency. A unit test enforces this invariant on every rule of the profile, and CI runs it against exported Alpine and Rocky Linux root filesystems.
+
 ### Non-Goals
 
 - No destructive automatic remediation (prints actionable remediation commands instead).
@@ -69,7 +75,7 @@ All 103 embedded rules are implemented via 14 reusable, zero-subprocess primitiv
 7. `sudoers` — `/etc/sudoers` + `/etc/sudoers.d/*` (broad root targets, `!` command negations, required `Defaults` `use_pty`/`logfile`/`timestamp_timeout`, `NOPASSWD`, `!authenticate`).
 8. `suid_sgid` — filesystem walk enforcing explicit SUID/SGID whitelist and forbidding world-writable SUID/SGID binaries.
 9. `world_writable` — filesystem walk detecting world-writable regular files (`o+w`) and world-writable directories missing the sticky bit (`+t`).
-10. `package_repos` — APT `.list`, DEB822 `.sources`, YUM/DNF `.repo` exact/subdomain host trust and GPG verification checks.
+10. `package_repos` — APT `.list`, DEB822 `.sources`, YUM/DNF `.repo` exact/subdomain host trust and GPG verification checks. APT sources follow `sources.list(5)`: DEB822 values continue on lines starting with whitespace, `mirror+file:` lists (`apt-transport-mirror(1)`) are read inside the root and every mirror is checked (a missing, empty or compressed list yields `WARN`), and the options `trusted`, `allow-insecure`, `allow-weak` and `allow-downgrade-to-insecure` (and their `apt.conf` counterparts) fail when set to any value APT's `StringToBool` reads as true.
 11. `package_state` — RFC-822 `/var/lib/dpkg/status` parser (`all_installed`, `any_installed`, `all_absent`).
 12. `service_state` — systemd symlink and `*.wants/` inspector (`any_enabled`, `exactly_one_enabled`, `all_disabled_or_masked`) without calling `systemctl`.
 13. `firewall_config` — UFW (`/etc/ufw/*`, `/etc/default/ufw`) and nftables (`/etc/nftables.conf`) single-active-firewall, default-deny input, and loopback checks.
@@ -80,7 +86,7 @@ All 103 embedded rules are implemented via 14 reusable, zero-subprocess primitiv
 ## 4. CLI Contract
 
 ```bash
-manis audit [--profile cis-l1-server|all|anssi-minimal|anssi-intermediary|anssi-reinforced] \
+manis audit [--profile cis-l1-server|all|anssi-minimal|anssi-intermediary|anssi-reinforced|linux-generic] \
             [--format table|json|sarif|markdown] \
             [--fail-on critical|high|medium|low] \
             [--root <path> [--fixture-meta]] [--config manis.toml] [--output <file>]

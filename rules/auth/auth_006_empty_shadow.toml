@@ -2,7 +2,7 @@ id = "AUTH-006"
 title = "Ensure no /etc/shadow accounts have empty password fields"
 description = "Verifies that every account entry in /etc/shadow has a non-empty password hash or lock marker."
 severity = "critical"
-profiles = ["cis-l1-server", "anssi-minimal", "anssi-intermediary", "anssi-reinforced"]
+profiles = ["cis-l1-server", "anssi-minimal", "anssi-intermediary", "anssi-reinforced", "linux-generic"]
 remediation = """
 Lock or set a strong password on any account with an empty field in /etc/shadow:
   sudo passwd -l <username>

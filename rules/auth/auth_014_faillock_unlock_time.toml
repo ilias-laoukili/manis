@@ -2,7 +2,7 @@ id = "AUTH-014"
 title = "Configure failed login unlock time (faillock unlock_time = 0 or >= 900)"
 description = "Verifies that /etc/security/faillock.conf sets unlock_time to 0 (permanent lock until admin unlock) or at least 900 seconds."
 severity = "medium"
-profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced"]
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced", "linux-generic"]
 remediation = '''
 Configure unlock_time in /etc/security/faillock.conf:
   unlock_time = 900

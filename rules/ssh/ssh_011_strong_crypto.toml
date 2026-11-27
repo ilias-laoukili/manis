@@ -2,7 +2,7 @@ id = "SSH-011"
 title = "Restrict SSH to strong Ciphers, MACs, and KexAlgorithms"
 description = "Verifies that OpenSSH explicitly restricts Ciphers, MACs, and KexAlgorithms to modern approved cryptographic primitives."
 severity = "high"
-profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced"]
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced", "linux-generic"]
 remediation = """
 Set strong algorithms in /etc/ssh/sshd_config.d/01-hardening.conf:
   Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr

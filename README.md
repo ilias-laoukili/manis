@@ -30,8 +30,20 @@ Named after *Manis* — the pangolin, the only mammal fully armored in protectiv
 ### Scope and limits
 
 - Not a replacement for OpenSCAP or Ubuntu Security Guide on a live server: coverage is partial (103 embedded rules, 93 of them in the default `cis-l1-server` profile) and formal SCAP/OVAL reports are out of scope.
-- Ubuntu 24.04 (dpkg/systemd) only for now.
+- Full catalog on the Debian family: Ubuntu 24.04, Debian 12 and Debian 13 (dpkg, APT, systemd). CIS references are those of the CIS Ubuntu 24.04 benchmark; no CIS Debian mapping is claimed.
+- Other Linux distributions: only the `linux-generic` profile (73 rules with no dpkg, APT, UFW, AppArmor or `/etc/pam.d/common-*` dependency).
 - Runtime-only state (`/proc/sys`, `/proc/mounts`) is absent from an offline image: those rules report `WARN`, never `PASS`.
+
+### Profiles
+
+| Profile | Rules | Scope |
+| :--- | :---: | :--- |
+| `cis-l1-server` (default) | 93 | CIS Ubuntu Linux 24.04 LTS v1.0.0, Level 1 Server |
+| `anssi-minimal` | 36 | ANSSI-BP-028 v2.0, minimal level |
+| `anssi-intermediary` | 95 | ANSSI-BP-028 v2.0, intermediary level (includes minimal) |
+| `anssi-reinforced` | 101 | ANSSI-BP-028 v2.0, reinforced level (includes intermediary) |
+| `linux-generic` | 73 | Distribution-independent checks for any Linux system |
+| `all` | 103 | Every embedded rule, including the 3 `MANUAL` controls |
 
 ### Sample Output
 
@@ -120,6 +132,9 @@ manis audit --root tests/fixtures/ubuntu-default --fixture-meta
 
 # Run all 103 rules (including ANSSI-BP-028 reinforced & explicit MANUAL controls)
 manis audit --profile all --root tests/fixtures/ubuntu-hardened --fixture-meta
+
+# Any other Linux distribution (no dpkg, APT, UFW or AppArmor dependency)
+manis audit --profile linux-generic --root /mnt/rocky-image
 
 # Emit deterministic JSON, SARIF 2.1.0, or Markdown
 manis audit --format json --output report.json

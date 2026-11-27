@@ -17,3 +17,7 @@ description = "ANSSI-BP-028 v2.0 Intermediary controls (cumulative with minimal)
 [[profiles]]
 name = "anssi-reinforced"
 description = "ANSSI-BP-028 v2.0 Reinforced controls (cumulative with intermediary)."
+
+[[profiles]]
+name = "linux-generic"
+description = "Distribution-independent Linux hardening checks: no dpkg, APT, UFW, AppArmor or Debian-family PAM (/etc/pam.d/common-*) dependency."

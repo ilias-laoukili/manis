@@ -2,7 +2,7 @@ id = "AUTH-001"
 title = "Interactive shell inactivity timeout (TMOUT)"
 description = "Verifies that shell sessions enforce an inactivity timeout (TMOUT between 1 and 600 seconds) marked readonly across global shell profile files."
 severity = "medium"
-profiles = ["cis-l1-server", "anssi-minimal", "anssi-intermediary", "anssi-reinforced"]
+profiles = ["cis-l1-server", "anssi-minimal", "anssi-intermediary", "anssi-reinforced", "linux-generic"]
 
 remediation = """
 Create /etc/profile.d/99-manis-tmout.sh with:

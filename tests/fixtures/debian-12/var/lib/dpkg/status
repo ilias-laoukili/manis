@@ -1,0 +1,15 @@
+Package: base-files
+Status: install ok installed
+Version: 12.4+deb12u5
+
+Package: apt
+Status: install ok installed
+Version: 2.6.1
+
+Package: inetutils-telnetd
+Status: install ok installed
+Version: 2:2.4-2+deb12u3
+
+Package: openssh-server
+Status: install ok installed
+Version: 1:9.2p1-2+deb12u3

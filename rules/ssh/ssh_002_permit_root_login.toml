@@ -2,7 +2,7 @@ id = "SSH-002"
 title = "Disable direct root login over SSH"
 description = "Verifies that PermitRootLogin is explicitly set to 'no' in /etc/ssh/sshd_config (or an earlier Include drop-in)."
 severity = "critical"
-profiles = ["cis-l1-server", "anssi-minimal", "anssi-intermediary", "anssi-reinforced"]
+profiles = ["cis-l1-server", "anssi-minimal", "anssi-intermediary", "anssi-reinforced", "linux-generic"]
 remediation = """
 Set in /etc/ssh/sshd_config.d/01-hardening.conf (or /etc/ssh/sshd_config):
   PermitRootLogin no

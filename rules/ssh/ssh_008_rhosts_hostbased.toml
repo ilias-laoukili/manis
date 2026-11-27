@@ -2,7 +2,7 @@ id = "SSH-008"
 title = "Disable legacy SSH rhosts, hostbased, and GSSAPI authentication"
 description = "Verifies that IgnoreRhosts is enabled and HostbasedAuthentication and GSSAPIAuthentication are disabled."
 severity = "high"
-profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced"]
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced", "linux-generic"]
 remediation = """
 Set in /etc/ssh/sshd_config.d/01-hardening.conf:
   IgnoreRhosts yes

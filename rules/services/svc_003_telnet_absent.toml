@@ -1,11 +1,11 @@
 id = "SVC-003"
 title = "Ensure telnet client/server packages are not installed"
-description = "Verifies that cleartext telnet packages ('telnet', 'inetutils-telnet', 'telnetd') are not installed."
+description = "Verifies that cleartext telnet client and server packages ('telnet', 'inetutils-telnet', 'telnet-ssl', 'telnetd', 'inetutils-telnetd', 'telnetd-ssl') are not installed. On Debian and Ubuntu, 'telnetd' is only a transitional package for 'inetutils-telnetd', so the server is detected under every package name."
 severity = "high"
 profiles = ["cis-l1-server", "anssi-minimal", "anssi-intermediary", "anssi-reinforced"]
 remediation = '''
-Purge telnet packages:
-  sudo apt-get purge -y telnet inetutils-telnet telnetd
+Purge telnet packages (drop any name APT reports as unknown):
+  sudo apt-get purge -y telnet inetutils-telnet telnet-ssl telnetd inetutils-telnetd telnetd-ssl
 '''
 
 [references]
@@ -16,4 +16,4 @@ nist = ["CM-7"]
 [check]
 type = "package_state"
 mode = "all_absent"
-packages = ["telnet", "inetutils-telnet", "telnetd"]
+packages = ["telnet", "inetutils-telnet", "telnet-ssl", "telnetd", "inetutils-telnetd", "telnetd-ssl"]

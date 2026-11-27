@@ -2,7 +2,7 @@ id = "FS-007"
 title = "Disable unused filesystem kernel module (jffs2)"
 description = "Verifies that the legacy/uncommon 'jffs2' filesystem kernel module is disabled via /etc/modprobe.d/*.conf to reduce kernel attack surface."
 severity = "low"
-profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced"]
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced", "linux-generic"]
 artifact_uri = "etc/modprobe.d/cis-filesystems.conf"
 remediation = """
 Add the following lines to /etc/modprobe.d/cis-filesystems.conf:
