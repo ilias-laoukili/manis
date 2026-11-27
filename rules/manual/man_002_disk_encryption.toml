@@ -1,0 +1,21 @@
+id = "MAN-002"
+title = "Verify full-disk encryption at rest (manual)"
+description = "Verifying cryptographic key management and full-disk encryption coverage across host storage and backups requires manual operational review."
+severity = "medium"
+profiles = ["anssi-reinforced"]
+artifact_uri = "etc/crypttab"
+remediation = """
+Ensure sensitive data partitions and swap are encrypted at rest (e.g. LUKS2 with strong KDF) and verify key escrow procedures.
+"""
+
+[references]
+cis = []
+anssi = ["R29"]
+nist = ["SC-28"]
+
+[check]
+type = "manual"
+verification_steps = [
+  "Run 'lsblk -f' and inspect /etc/crypttab to verify LUKS/dm-crypt encryption on data and swap volumes.",
+  "Confirm encryption passphrases or TPM/tang keys follow organizational key-management policy."
+]

@@ -1,0 +1,19 @@
+id = "LOG-015"
+title = "Ensure periodic AIDE filesystem integrity checks are scheduled"
+description = "Verifies via /etc/systemd/system that dailyaidecheck.timer (or aidecheck.timer) is enabled."
+severity = "medium"
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced"]
+remediation = '''
+Enable the periodic AIDE systemd timer:
+  sudo systemctl enable --now dailyaidecheck.timer
+'''
+
+[references]
+cis = ["6.3.2"]
+anssi = []
+nist = ["SI-7"]
+
+[check]
+type = "service_state"
+mode = "any_enabled"
+units = ["dailyaidecheck.timer", "aidecheck.timer"]

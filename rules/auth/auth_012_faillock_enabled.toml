@@ -1,0 +1,20 @@
+id = "AUTH-012"
+title = "Enable pam_faillock in /etc/pam.d/common-auth"
+description = "Verifies that pam_faillock.so is configured in /etc/pam.d/common-auth to enforce account lockout on repeated authentication failures."
+severity = "high"
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced"]
+remediation = '''
+Enable pam_faillock in /etc/pam.d/common-auth (using pam-auth-update or a dedicated PAM profile).
+'''
+
+[references]
+cis = []
+anssi = []
+nist = ["AC-7"]
+
+[check]
+type = "file_content"
+mode = "regex"
+match_mode = "any_line"
+paths = ["/etc/pam.d/common-auth"]
+pattern = 'pam_faillock\.so'

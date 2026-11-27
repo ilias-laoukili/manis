@@ -1,0 +1,19 @@
+id = "SVC-007"
+title = "Ensure rsync daemon (rsync.service) is disabled or masked"
+description = "Verifies via /etc/systemd/system that rsync daemon (rsync.service) is not enabled in any systemd target wants directory or is explicitly masked to /dev/null."
+severity = "medium"
+profiles = ["cis-l1-server", "anssi-minimal", "anssi-intermediary", "anssi-reinforced"]
+remediation = '''
+Stop, disable, and mask the service (or purge its package if unused):
+  sudo systemctl --now mask <unit>
+'''
+
+[references]
+cis = ["2.1.16"]
+anssi = []
+nist = ["CM-7"]
+
+[check]
+type = "service_state"
+mode = "all_disabled_or_masked"
+units = ["rsync.service"]

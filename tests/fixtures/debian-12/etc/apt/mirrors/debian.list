@@ -1,0 +1,2 @@
+# Mirror list read by apt-transport-mirror (one URI per line, metadata after a tab)
+https://deb.debian.org/debian	priority:1

@@ -1,0 +1,19 @@
+id = "SVC-008"
+title = "Ensure SNMP daemon (snmpd.service) is disabled or masked"
+description = "Verifies via /etc/systemd/system that SNMP daemon (snmpd.service) is not enabled in any systemd target wants directory or is explicitly masked to /dev/null."
+severity = "medium"
+profiles = ["cis-l1-server", "anssi-minimal", "anssi-intermediary", "anssi-reinforced", "linux-generic"]
+remediation = '''
+Stop, disable, and mask the service (or purge its package if unused):
+  sudo systemctl --now mask <unit>
+'''
+
+[references]
+cis = []
+anssi = []
+nist = ["CM-7"]
+
+[check]
+type = "service_state"
+mode = "all_disabled_or_masked"
+units = ["snmpd.service"]

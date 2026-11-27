@@ -1,0 +1,32 @@
+id = "AUTH-002"
+title = "Restrictive default file creation mask (umask)"
+description = "Verifies that default umask is strictly configured (077 in /etc/login.defs and /etc/profile; 027 or 077 in shell drop-ins and PAM) with no permissive overrides such as 022."
+severity = "medium"
+profiles = ["cis-l1-server", "anssi-minimal", "anssi-intermediary", "anssi-reinforced"]
+
+remediation = """
+Set restrictive default umask values and remove permissive 022 overrides:
+  - /etc/login.defs:  UMASK 077
+  - /etc/profile:     umask 077
+  - /etc/profile.d/99-manis-umask.sh: umask 027 (or 077)
+  - /etc/pam.d/common-session: session optional pam_umask.so umask=0027
+"""
+
+[references]
+cis = ["5.4.3.3"]
+anssi = ["R36"]
+nist = ["AC-6", "CM-6"]
+
+
+[check]
+type = "file_content"
+mode = "umask"
+strict_paths = ["/etc/login.defs", "/etc/profile"]
+strict_allowed = ["077"]
+paths = ["/etc/profile.d/*.sh", "/etc/bashrc", "/etc/bash.bashrc"]
+standard_allowed = ["027", "077"]
+pam_paths = [
+  "/etc/pam.d/common-session",
+  "/etc/pam.d/system-auth",
+  "/etc/pam.d/login",
+]

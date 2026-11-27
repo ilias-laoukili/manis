@@ -1,0 +1,25 @@
+id = "SSH-004"
+title = "Limit SSH maximum authentication attempts (MaxAuthTries)"
+description = "Verifies that MaxAuthTries is set between 1 and 4 to slow down remote brute-force attacks."
+severity = "medium"
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced", "linux-generic"]
+remediation = """
+Set in /etc/ssh/sshd_config.d/01-hardening.conf:
+  MaxAuthTries 4
+Then validate and reload: sudo sshd -t && sudo systemctl reload ssh
+"""
+
+[references]
+cis = ["5.1.16"]
+anssi = []
+nist = ["AC-7"]
+
+[check]
+type = "sshd_config"
+file = "/etc/ssh/sshd_config"
+
+[[check.params]]
+key = "MaxAuthTries"
+op = "le"
+value = "4"
+min_value = 1

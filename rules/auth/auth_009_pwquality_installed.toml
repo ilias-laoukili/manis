@@ -1,0 +1,19 @@
+id = "AUTH-009"
+title = "Ensure libpam-pwquality package is installed"
+description = "Verifies that 'libpam-pwquality' is installed so password complexity policies can be enforced."
+severity = "medium"
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced"]
+remediation = '''
+Install libpam-pwquality:
+  sudo apt-get update && sudo apt-get install -y libpam-pwquality
+'''
+
+[references]
+cis = []
+anssi = []
+nist = ["IA-5"]
+
+[check]
+type = "package_state"
+mode = "all_installed"
+packages = ["libpam-pwquality"]

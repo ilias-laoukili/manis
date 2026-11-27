@@ -1,0 +1,49 @@
+id = "FS-002"
+title = "Audit SUID/SGID binaries against whitelist and forbid world-writable SUID/SGID"
+description = "Scans the filesystem for SUID and SGID regular files, flagging any binary absent from the approved whitelist as well as any world-writable SUID/SGID file."
+severity = "critical"
+profiles = ["cis-l1-server", "anssi-minimal", "anssi-intermediary", "anssi-reinforced", "linux-generic"]
+
+remediation = """
+Inspect every reported SUID/SGID binary. Immediately remove world-writable permissions and strip unnecessary SUID/SGID bits:
+  sudo chmod o-w <path>
+  sudo chmod u-s,g-s <path>
+"""
+
+[references]
+cis = ["7.1.13"]
+anssi = ["R56"]
+nist = ["AC-6", "CM-7"]
+
+
+[check]
+type = "suid_sgid"
+search_roots = ["/"]
+skip_dirs = ["/proc", "/sys", "/dev", "/run"]
+forbid_world_writable = true
+whitelist = [
+  "/bin/mount",
+  "/bin/ping",
+  "/bin/su",
+  "/bin/umount",
+  "/sbin/unix_chkpwd",
+  "/usr/bin/chfn",
+  "/usr/bin/chsh",
+  "/usr/bin/crontab",
+  "/usr/bin/fusermount",
+  "/usr/bin/fusermount3",
+  "/usr/bin/gpasswd",
+  "/usr/bin/mount",
+  "/usr/bin/newgrp",
+  "/usr/bin/passwd",
+  "/usr/bin/ping",
+  "/usr/bin/pkexec",
+  "/usr/bin/su",
+  "/usr/bin/sudo",
+  "/usr/bin/umount",
+  "/usr/lib/dbus-1.0/dbus-daemon-launch-helper",
+  "/usr/lib/openssh/ssh-keysign",
+  "/usr/lib/polkit-1/polkit-agent-helper-1",
+  "/usr/libexec/openssh/ssh-keysign",
+  "/usr/sbin/unix_chkpwd",
+]

@@ -1,0 +1,25 @@
+id = "SSH-005"
+title = "Restrict SSH authentication grace period (LoginGraceTime)"
+description = "Verifies that LoginGraceTime is configured between 1 and 60 seconds to prevent connection exhaustion."
+severity = "medium"
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced", "linux-generic"]
+remediation = """
+Set in /etc/ssh/sshd_config.d/01-hardening.conf:
+  LoginGraceTime 60
+Then validate and reload: sudo sshd -t && sudo systemctl reload ssh
+"""
+
+[references]
+cis = ["5.1.13"]
+anssi = []
+nist = ["AC-12"]
+
+[check]
+type = "sshd_config"
+file = "/etc/ssh/sshd_config"
+
+[[check.params]]
+key = "LoginGraceTime"
+op = "le"
+value = "60"
+min_value = 1

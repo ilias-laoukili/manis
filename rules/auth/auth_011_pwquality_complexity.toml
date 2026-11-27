@@ -1,0 +1,26 @@
+id = "AUTH-011"
+title = "Enforce password character complexity (pwquality)"
+description = "Verifies that /etc/security/pwquality.conf configures minclass = 4 or negative character-class credits (dcredit/ucredit/lcredit/ocredit)."
+severity = "medium"
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced", "linux-generic"]
+artifact_uri = "etc/security/pwquality.conf"
+remediation = '''
+Configure password complexity in /etc/security/pwquality.conf:
+  minclass = 4
+  dcredit = -1
+  ucredit = -1
+  lcredit = -1
+  ocredit = -1
+'''
+
+[references]
+cis = []
+anssi = []
+nist = ["IA-5"]
+
+[check]
+type = "file_content"
+mode = "regex"
+match_mode = "any_line"
+paths = ["/etc/security/pwquality.conf", "/etc/security/pwquality.conf.d/*.conf"]
+pattern = '^(minclass\s*=\s*[4-9]|(dcredit|ucredit|lcredit|ocredit)\s*=\s*-[1-9])'

@@ -1,0 +1,7 @@
+/target
+*.rs.bk
+*.sarif
+*.profraw
+.DS_Store
+.env
+.env.*

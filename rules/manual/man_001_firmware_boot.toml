@@ -1,0 +1,22 @@
+id = "MAN-001"
+title = "Verify BIOS/UEFI password and boot order lock (manual)"
+description = "Firmware-level authentication and boot order restrictions cannot be reliably audited from Linux user space and must be verified manually."
+severity = "medium"
+profiles = ["anssi-intermediary", "anssi-reinforced"]
+artifact_uri = "sys/firmware/efi"
+remediation = """
+Set a strong BIOS/UEFI administrator password, enable Secure Boot where supported, and disable booting from untrusted removable media or network interfaces.
+"""
+
+[references]
+cis = []
+anssi = ["R4", "R5"]
+nist = ["CM-6", "SC-28"]
+
+[check]
+type = "manual"
+verification_steps = [
+  "Confirm BIOS/UEFI setup is protected by an administrator password.",
+  "Confirm boot order restricts booting to the internal signed OS disk.",
+  "Verify Secure Boot status (e.g. mokutil --sb-state) where hardware supports UEFI."
+]

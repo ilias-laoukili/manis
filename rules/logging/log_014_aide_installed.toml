@@ -1,0 +1,20 @@
+id = "LOG-014"
+title = "Ensure AIDE file integrity monitoring package is installed"
+description = "Verifies that 'aide' is installed in /var/lib/dpkg/status for cryptographic filesystem integrity monitoring."
+severity = "medium"
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced"]
+remediation = '''
+Install AIDE and initialize its baseline database:
+  sudo apt-get update && sudo apt-get install -y aide aide-common
+  sudo aideinit
+'''
+
+[references]
+cis = ["6.3.1"]
+anssi = []
+nist = ["SI-7"]
+
+[check]
+type = "package_state"
+mode = "all_installed"
+packages = ["aide"]

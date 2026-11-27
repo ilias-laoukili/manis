@@ -1,0 +1,36 @@
+id = "SSH-008"
+title = "Disable legacy SSH rhosts, hostbased, and GSSAPI authentication"
+description = "Verifies that IgnoreRhosts is enabled and HostbasedAuthentication and GSSAPIAuthentication are disabled."
+severity = "high"
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced", "linux-generic"]
+remediation = """
+Set in /etc/ssh/sshd_config.d/01-hardening.conf:
+  IgnoreRhosts yes
+  HostbasedAuthentication no
+  GSSAPIAuthentication no
+Then validate and reload: sudo sshd -t && sudo systemctl reload ssh
+"""
+
+[references]
+cis = ["5.1.9", "5.1.10", "5.1.11"]
+anssi = []
+nist = ["CM-7", "IA-2"]
+
+[check]
+type = "sshd_config"
+file = "/etc/ssh/sshd_config"
+
+[[check.params]]
+key = "IgnoreRhosts"
+op = "eq"
+value = "yes"
+
+[[check.params]]
+key = "HostbasedAuthentication"
+op = "eq"
+value = "no"
+
+[[check.params]]
+key = "GSSAPIAuthentication"
+op = "eq"
+value = "no"

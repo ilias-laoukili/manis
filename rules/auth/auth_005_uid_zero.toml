@@ -1,0 +1,19 @@
+id = "AUTH-005"
+title = "Ensure root is the only UID 0 account"
+description = "Verifies that no user account other than 'root' has UID 0 in /etc/passwd."
+severity = "critical"
+profiles = ["cis-l1-server", "anssi-minimal", "anssi-intermediary", "anssi-reinforced", "linux-generic"]
+remediation = """
+Remove or reassign UID 0 from any non-root account listed in /etc/passwd:
+  sudo usermod -u <new-uid> <username>
+"""
+
+[references]
+cis = ["5.4.2.1"]
+anssi = []
+nist = ["AC-6", "IA-2"]
+
+[check]
+type = "file_content"
+mode = "passwd_uid_zero"
+paths = ["/etc/passwd"]

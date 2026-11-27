@@ -1,0 +1,20 @@
+id = "AUTH-016"
+title = "Enforce strong password hashing in pam_unix (yescrypt or sha512)"
+description = "Verifies that pam_unix.so in /etc/pam.d/common-password uses yescrypt or sha512."
+severity = "high"
+profiles = ["cis-l1-server", "anssi-minimal", "anssi-intermediary", "anssi-reinforced"]
+remediation = '''
+Ensure pam_unix.so in /etc/pam.d/common-password includes 'yescrypt' or 'sha512'.
+'''
+
+[references]
+cis = ["5.3.3.4.3"]
+anssi = []
+nist = ["IA-5", "SC-13"]
+
+[check]
+type = "file_content"
+mode = "regex"
+match_mode = "any_line"
+paths = ["/etc/pam.d/common-password"]
+pattern = 'pam_unix\.so.*\b(yescrypt|sha512)\b'

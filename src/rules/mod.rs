@@ -1,0 +1,353 @@
+//! Embedded rule registry and profile filtering.
+
+pub mod schema;
+
+use crate::error::ManisError;
+use schema::{ProfileSpec, ProfilesFile, RuleSpec};
+use std::collections::BTreeSet;
+
+const EMBEDDED_PROFILES: &str = include_str!("../../rules/profiles.toml");
+
+macro_rules! embed_rules {
+    ($($path:literal),* $(,)?) => {
+        &[
+            $(
+                ($path, include_str!(concat!("../../", $path))),
+            )*
+        ]
+    };
+}
+
+const EMBEDDED_RULES: &[(&str, &str)] = embed_rules!(
+    "rules/apparmor/mac_001_apparmor_installed.toml",
+    "rules/apparmor/mac_002_apparmor_bootloader.toml",
+    "rules/apparmor/mac_003_apparmor_profiles_l1.toml",
+    "rules/apparmor/mac_004_apparmor_profiles_enforce.toml",
+    "rules/auth/auth_001_tmout.toml",
+    "rules/auth/auth_002_umask.toml",
+    "rules/auth/auth_003_pass_max_days.toml",
+    "rules/auth/auth_004_pass_min_days.toml",
+    "rules/auth/auth_005_uid_zero.toml",
+    "rules/auth/auth_006_empty_shadow.toml",
+    "rules/auth/auth_007_issue_banner.toml",
+    "rules/auth/auth_008_issue_net_banner.toml",
+    "rules/auth/auth_009_pwquality_installed.toml",
+    "rules/auth/auth_010_pwquality_minlen.toml",
+    "rules/auth/auth_011_pwquality_complexity.toml",
+    "rules/auth/auth_012_faillock_enabled.toml",
+    "rules/auth/auth_013_faillock_deny.toml",
+    "rules/auth/auth_014_faillock_unlock_time.toml",
+    "rules/auth/auth_015_pwhistory.toml",
+    "rules/auth/auth_016_pam_unix_hash.toml",
+    "rules/auth/auth_017_pam_unix_no_nullok.toml",
+    "rules/auth/auth_018_system_accounts_nologin.toml",
+    "rules/boot/boot_001_grub_perms.toml",
+    "rules/boot/boot_002_grub_password.toml",
+    "rules/filesystem/file_001_passwd_perms.toml",
+    "rules/filesystem/file_002_passwd_bak_perms.toml",
+    "rules/filesystem/file_003_group_perms.toml",
+    "rules/filesystem/file_004_group_bak_perms.toml",
+    "rules/filesystem/file_005_shadow_perms.toml",
+    "rules/filesystem/file_006_shadow_bak_perms.toml",
+    "rules/filesystem/file_007_gshadow_perms.toml",
+    "rules/filesystem/file_008_gshadow_bak_perms.toml",
+    "rules/filesystem/file_009_crontab_perms.toml",
+    "rules/filesystem/file_010_cron_d_perms.toml",
+    "rules/filesystem/fs_001_partitioning.toml",
+    "rules/filesystem/fs_002_suid_sgid.toml",
+    "rules/filesystem/fs_003_cramfs_disabled.toml",
+    "rules/filesystem/fs_004_freevxfs_disabled.toml",
+    "rules/filesystem/fs_005_hfs_disabled.toml",
+    "rules/filesystem/fs_006_hfsplus_disabled.toml",
+    "rules/filesystem/fs_007_jffs2_disabled.toml",
+    "rules/filesystem/fs_008_udf_disabled.toml",
+    "rules/filesystem/fs_009_world_writable.toml",
+    "rules/firewall/fw_001_package_installed.toml",
+    "rules/firewall/fw_002_single_enabled.toml",
+    "rules/firewall/fw_003_default_deny_input.toml",
+    "rules/firewall/fw_004_loopback.toml",
+    "rules/kernel/kern_001_sysctl.toml",
+    "rules/kernel/kern_002_disable_modules.toml",
+    "rules/kernel/kern_003_module_signature.toml",
+    "rules/kernel/kern_004_security_primitives.toml",
+    "rules/kernel/kern_005_ptrace_scope.toml",
+    "rules/kernel/kern_006_core_dumps.toml",
+    "rules/kernel/kern_007_fs_protections.toml",
+    "rules/logging/log_001_journald_persistent.toml",
+    "rules/logging/log_002_journald_compress.toml",
+    "rules/logging/log_003_auditd_installed.toml",
+    "rules/logging/log_004_auditd_enabled.toml",
+    "rules/logging/log_005_audit_boot_enabled.toml",
+    "rules/logging/log_006_audit_backlog_limit.toml",
+    "rules/logging/log_007_auditd_keep_logs.toml",
+    "rules/logging/log_008_auditd_full_action.toml",
+    "rules/logging/log_009_audit_rules_sudoers.toml",
+    "rules/logging/log_010_audit_rules_time.toml",
+    "rules/logging/log_011_audit_rules_identity.toml",
+    "rules/logging/log_012_audit_rules_modules.toml",
+    "rules/logging/log_013_audit_rules_immutable.toml",
+    "rules/logging/log_014_aide_installed.toml",
+    "rules/logging/log_015_aide_scheduled.toml",
+    "rules/manual/man_001_firmware_boot.toml",
+    "rules/manual/man_002_disk_encryption.toml",
+    "rules/manual/man_003_physical_access.toml",
+    "rules/network/net_001_ipv4.toml",
+    "rules/network/net_002_ipv6.toml",
+    "rules/packages/pkg_001_trusted_repos.toml",
+    "rules/services/svc_001_nis_absent.toml",
+    "rules/services/svc_002_rsh_absent.toml",
+    "rules/services/svc_003_telnet_absent.toml",
+    "rules/services/svc_004_avahi_disabled.toml",
+    "rules/services/svc_005_cups_disabled.toml",
+    "rules/services/svc_006_rpcbind_disabled.toml",
+    "rules/services/svc_007_rsync_disabled.toml",
+    "rules/services/svc_008_snmpd_disabled.toml",
+    "rules/services/svc_009_vsftpd_disabled.toml",
+    "rules/services/svc_010_ntp_installed.toml",
+    "rules/services/svc_011_ntp_single_daemon.toml",
+    "rules/services/svc_012_ntp_servers.toml",
+    "rules/ssh/ssh_001_config_perms.toml",
+    "rules/ssh/ssh_002_permit_root_login.toml",
+    "rules/ssh/ssh_003_permit_empty_passwords.toml",
+    "rules/ssh/ssh_004_max_auth_tries.toml",
+    "rules/ssh/ssh_005_login_grace_time.toml",
+    "rules/ssh/ssh_006_client_alive.toml",
+    "rules/ssh/ssh_007_log_level.toml",
+    "rules/ssh/ssh_008_rhosts_hostbased.toml",
+    "rules/ssh/ssh_009_user_env_pam.toml",
+    "rules/ssh/ssh_010_forwarding_banner.toml",
+    "rules/ssh/ssh_011_strong_crypto.toml",
+    "rules/sudo/sudo_001_target_users.toml",
+    "rules/sudo/sudo_002_negations.toml",
+    "rules/sudo/sudo_003_defaults.toml",
+    "rules/sudo/sudo_004_no_nopasswd.toml",
+    "rules/sudo/sudo_005_reauth.toml",
+);
+
+/// In-memory catalog of all embedded profiles and rules, sorted deterministically by rule ID.
+#[derive(Debug, Clone)]
+pub struct RuleRegistry {
+    profiles: Vec<ProfileSpec>,
+    rules: Vec<RuleSpec>,
+}
+
+impl RuleRegistry {
+    /// Loads and validates all embedded TOML profiles and rules.
+    pub fn load_embedded() -> Result<Self, ManisError> {
+        let profiles_file: ProfilesFile = toml::from_str(EMBEDDED_PROFILES).map_err(|e| {
+            ManisError::Config(format!("failed to parse embedded profiles.toml: {e}"))
+        })?;
+        let valid_profiles: BTreeSet<&str> = profiles_file
+            .profiles
+            .iter()
+            .map(|p| p.name.as_str())
+            .collect();
+
+        let mut rules = Vec::with_capacity(EMBEDDED_RULES.len());
+        let mut seen_ids = BTreeSet::new();
+
+        for (source, raw) in EMBEDDED_RULES {
+            let rule: RuleSpec = toml::from_str(raw).map_err(|e| {
+                ManisError::Config(format!("failed to parse embedded rule '{source}': {e}"))
+            })?;
+            if rule.id.trim().is_empty() {
+                return Err(ManisError::Config(format!(
+                    "rule '{source}' has an empty id"
+                )));
+            }
+            if !seen_ids.insert(rule.id.clone()) {
+                return Err(ManisError::Config(format!(
+                    "duplicate embedded rule id '{}'",
+                    rule.id
+                )));
+            }
+            if rule.remediation.trim().is_empty() {
+                return Err(ManisError::Config(format!(
+                    "rule '{}' is missing remediation guidance",
+                    rule.id
+                )));
+            }
+            for prof in &rule.profiles {
+                if !valid_profiles.contains(prof.as_str()) {
+                    return Err(ManisError::Config(format!(
+                        "rule '{}' references unknown profile '{prof}'",
+                        rule.id
+                    )));
+                }
+            }
+            rules.push(rule);
+        }
+
+        // Deterministic canonical order by rule ID.
+        rules.sort_by(|a, b| a.id.cmp(&b.id));
+
+        Ok(Self {
+            profiles: profiles_file.profiles,
+            rules,
+        })
+    }
+
+    /// Returns all registered compliance profiles.
+    pub fn profiles(&self) -> &[ProfileSpec] {
+        &self.profiles
+    }
+
+    /// Returns all rules in deterministic sorted order.
+    pub fn all_rules(&self) -> &[RuleSpec] {
+        &self.rules
+    }
+
+    /// Selects rules matching `profile_name` (`"all"` returns every embedded rule).
+    pub fn rules_for_profile(&self, profile_name: &str) -> Result<Vec<&RuleSpec>, ManisError> {
+        if !self.profiles.iter().any(|p| p.name == profile_name) {
+            return Err(ManisError::UnknownProfile(profile_name.to_string()));
+        }
+        if profile_name == "all" {
+            return Ok(self.rules.iter().collect());
+        }
+        Ok(self
+            .rules
+            .iter()
+            .filter(|r| r.profiles.iter().any(|p| p == profile_name))
+            .collect())
+    }
+
+    /// Finds rules matching a canonical ID (e.g. `KERN-001`), an ANSSI alias (e.g. `R9`),
+    /// or a CIS control ID (e.g. `5.1.20`).
+    pub fn find_by_identifier(&self, query: &str) -> Vec<&RuleSpec> {
+        if let Some(exact) = self
+            .rules
+            .iter()
+            .find(|r| r.id.eq_ignore_ascii_case(query.trim()))
+        {
+            return vec![exact];
+        }
+        self.rules
+            .iter()
+            .filter(|r| r.matches_identifier(query))
+            .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::checks::referenced_paths;
+    use schema::CheckSpec;
+
+    #[test]
+    fn embedded_catalog_loads_all_103_rules_validly() {
+        let reg = RuleRegistry::load_embedded().expect("embedded rules should parse");
+        assert_eq!(reg.all_rules().len(), 103);
+        assert!(reg.profiles().len() >= 5);
+        for rule in reg.all_rules() {
+            let uri = rule.resolved_artifact_uri();
+            assert!(!uri.is_empty() && !uri.starts_with('/'));
+        }
+    }
+
+    #[test]
+    fn lookup_supports_canonical_anssi_and_cis_identifiers() {
+        let reg = RuleRegistry::load_embedded().expect("registry");
+
+        assert_eq!(reg.find_by_identifier("SSH-002")[0].id, "SSH-002");
+        assert_eq!(reg.find_by_identifier("5.1.20")[0].id, "SSH-002");
+        assert_eq!(reg.find_by_identifier("CIS 1.4.1")[0].id, "BOOT-002");
+        assert_eq!(reg.find_by_identifier("6.2.3.20")[0].id, "LOG-013");
+        assert!(
+            reg.find_by_identifier("R9")
+                .iter()
+                .any(|r| r.id == "KERN-001")
+        );
+    }
+
+    #[test]
+    fn profile_filtering_respects_l1_vs_l2_apparmor() {
+        let reg = RuleRegistry::load_embedded().expect("registry");
+        assert!(reg.rules_for_profile("nonexistent").is_err());
+        assert_eq!(reg.rules_for_profile("all").unwrap().len(), 103);
+
+        let cis_l1 = reg.rules_for_profile("cis-l1-server").unwrap();
+        assert!(cis_l1.len() >= 90);
+        assert!(cis_l1.iter().any(|r| r.id == "MAC-003"));
+        assert!(!cis_l1.iter().any(|r| r.id == "MAC-004"));
+
+        let reinforced = reg.rules_for_profile("anssi-reinforced").unwrap();
+        assert!(reinforced.iter().any(|r| r.id == "MAC-004"));
+        assert!(reg.rules_for_profile("anssi-minimal").unwrap().len() >= 20);
+    }
+
+    /// Rules of the `linux-generic` profile: none depends on a particular distribution.
+    const LINUX_GENERIC_RULES: &[&str] = &[
+        "AUTH-001", "AUTH-003", "AUTH-004", "AUTH-005", "AUTH-006", "AUTH-007", "AUTH-008",
+        "AUTH-010", "AUTH-011", "AUTH-013", "AUTH-014", "AUTH-018", "FILE-001", "FILE-002",
+        "FILE-003", "FILE-004", "FILE-005", "FILE-006", "FILE-007", "FILE-008", "FILE-009",
+        "FILE-010", "FS-001", "FS-002", "FS-003", "FS-004", "FS-005", "FS-006", "FS-007", "FS-008",
+        "FS-009", "KERN-001", "KERN-002", "KERN-003", "KERN-004", "KERN-005", "KERN-006",
+        "KERN-007", "LOG-001", "LOG-002", "LOG-004", "LOG-005", "LOG-006", "LOG-007", "LOG-008",
+        "LOG-009", "LOG-010", "LOG-011", "LOG-012", "LOG-013", "NET-001", "NET-002", "SSH-001",
+        "SSH-002", "SSH-003", "SSH-004", "SSH-005", "SSH-006", "SSH-007", "SSH-008", "SSH-009",
+        "SSH-010", "SSH-011", "SUDO-001", "SUDO-002", "SUDO-003", "SUDO-004", "SUDO-005",
+        "SVC-004", "SVC-005", "SVC-006", "SVC-008", "SVC-009",
+    ];
+
+    /// Paths that tie a rule to the Debian family: dpkg, APT, UFW and the Debian PAM layout.
+    const DISTRIBUTION_SPECIFIC_PREFIXES: &[&str] = &[
+        "/var/lib/dpkg/status",
+        "/etc/apt/",
+        "/etc/pam.d/common-",
+        "/etc/ufw/",
+    ];
+
+    #[test]
+    fn linux_generic_profile_has_no_distribution_specific_dependency() {
+        let reg = RuleRegistry::load_embedded().expect("registry");
+        let rules = reg
+            .rules_for_profile("linux-generic")
+            .expect("linux-generic profile");
+        let ids: Vec<&str> = rules.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(ids, LINUX_GENERIC_RULES);
+
+        for rule in rules {
+            assert!(
+                !matches!(
+                    rule.check,
+                    CheckSpec::PackageState(_)
+                        | CheckSpec::PackageRepos(_)
+                        | CheckSpec::FirewallConfig(_)
+                ),
+                "{} uses a dpkg, APT or UFW primitive",
+                rule.id
+            );
+            for path in referenced_paths(&rule.check) {
+                assert!(
+                    !DISTRIBUTION_SPECIFIC_PREFIXES
+                        .iter()
+                        .any(|prefix| path.starts_with(prefix)),
+                    "{} references the distribution-specific path {path}",
+                    rule.id
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn referenced_paths_expose_the_dependencies_linux_generic_forbids() {
+        // The invariant above only means something if excluded rules are really caught.
+        let reg = RuleRegistry::load_embedded().expect("registry");
+        for (id, expected) in [
+            ("SVC-001", "/var/lib/dpkg/status"),
+            ("PKG-001", "/etc/apt/sources.list"),
+            ("AUTH-002", "/etc/pam.d/common-session"),
+            ("AUTH-012", "/etc/pam.d/common-auth"),
+            ("FW-002", "/etc/ufw/ufw.conf"),
+        ] {
+            let rule = reg.find_by_identifier(id)[0];
+            assert_eq!(rule.id, id);
+            assert!(
+                referenced_paths(&rule.check).iter().any(|p| p == expected),
+                "{id} should reference {expected}"
+            );
+        }
+    }
+}

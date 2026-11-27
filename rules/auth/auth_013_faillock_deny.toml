@@ -1,0 +1,22 @@
+id = "AUTH-013"
+title = "Configure failed login lockout threshold (faillock deny <= 5)"
+description = "Verifies that /etc/security/faillock.conf sets deny between 1 and 5 failed attempts."
+severity = "medium"
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced", "linux-generic"]
+remediation = '''
+Configure deny in /etc/security/faillock.conf:
+  deny = 5
+'''
+
+[references]
+cis = ["5.3.3.1.1"]
+anssi = []
+nist = ["AC-7"]
+
+[check]
+type = "file_content"
+mode = "key_value_bound"
+paths = ["/etc/security/faillock.conf"]
+key = "deny"
+min = 1
+max = 5

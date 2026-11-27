@@ -1,0 +1,8 @@
+# Unhardened sshd_config
+Include /etc/ssh/sshd_config.d/*.conf
+PermitRootLogin yes
+PermitEmptyPasswords yes
+MaxAuthTries 6
+LoginGraceTime 120
+LogLevel QUIET
+UsePAM yes

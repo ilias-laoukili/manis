@@ -1,0 +1,23 @@
+id = "AUTH-014"
+title = "Configure failed login unlock time (faillock unlock_time = 0 or >= 900)"
+description = "Verifies that /etc/security/faillock.conf sets unlock_time to 0 (permanent lock until admin unlock) or at least 900 seconds."
+severity = "medium"
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced", "linux-generic"]
+remediation = '''
+Configure unlock_time in /etc/security/faillock.conf:
+  unlock_time = 900
+(Or set unlock_time = 0 to require explicit administrator unlock.)
+'''
+
+[references]
+cis = ["5.3.3.1.2"]
+anssi = []
+nist = ["AC-7"]
+
+[check]
+type = "file_content"
+mode = "key_value_bound"
+paths = ["/etc/security/faillock.conf"]
+key = "unlock_time"
+min = 900
+allow_zero = true

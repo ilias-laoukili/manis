@@ -1,0 +1,19 @@
+id = "SVC-001"
+title = "Ensure NIS client package is not installed"
+description = "Verifies that the legacy insecure NIS package ('nis') is not installed."
+severity = "high"
+profiles = ["cis-l1-server", "anssi-minimal", "anssi-intermediary", "anssi-reinforced"]
+remediation = '''
+Purge the NIS package:
+  sudo apt-get purge -y nis
+'''
+
+[references]
+cis = ["2.2.1"]
+anssi = []
+nist = ["CM-7"]
+
+[check]
+type = "package_state"
+mode = "all_absent"
+packages = ["nis"]

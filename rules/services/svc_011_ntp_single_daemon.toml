@@ -1,0 +1,20 @@
+id = "SVC-011"
+title = "Ensure a single time synchronization daemon is enabled"
+description = "Verifies via /etc/systemd/system that exactly one time synchronization daemon (chrony.service XOR systemd-timesyncd.service) is enabled."
+severity = "medium"
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced"]
+remediation = '''
+Enable exactly one time synchronization daemon and mask the other:
+  sudo systemctl enable --now chrony.service
+  sudo systemctl --now mask systemd-timesyncd.service
+'''
+
+[references]
+cis = ["2.3.1.1"]
+anssi = []
+nist = ["AU-8"]
+
+[check]
+type = "service_state"
+mode = "exactly_one_enabled"
+units = ["chrony.service", "systemd-timesyncd.service"]

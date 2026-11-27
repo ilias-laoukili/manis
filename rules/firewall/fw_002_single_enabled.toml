@@ -1,0 +1,20 @@
+id = "FW-002"
+title = "Ensure a single host firewall is enabled (UFW XOR nftables)"
+description = "Verifies that either UFW (ENABLED=yes in /etc/ufw/ufw.conf) or nftables (/etc/nftables.conf + nftables.service) is enabled, and not both simultaneously."
+severity = "high"
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced"]
+artifact_uri = "etc/ufw/ufw.conf"
+remediation = '''
+Enable a single host firewall (e.g. UFW):
+  sudo ufw enable
+If using nftables instead, disable UFW and enable nftables.service.
+'''
+
+[references]
+cis = ["4.2.3"]
+anssi = []
+nist = ["SC-7"]
+
+[check]
+type = "firewall_config"
+mode = "single_firewall_enabled"

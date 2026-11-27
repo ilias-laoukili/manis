@@ -1,0 +1,89 @@
+# Fixture metadata overlay (only applied with `--root <path> --fixture-meta`)
+[files."/usr/bin/passwd"]
+mode = "4755"
+uid = 0
+gid = 0
+
+[files."/usr/bin/sudo"]
+mode = "4755"
+uid = 0
+gid = 0
+
+[files."/usr/bin/ls"]
+mode = "0755"
+uid = 0
+gid = 0
+
+[files."/etc/passwd"]
+mode = "0644"
+uid = 0
+gid = 0
+
+[files."/etc/passwd-"]
+mode = "0644"
+uid = 0
+gid = 0
+
+[files."/etc/group"]
+mode = "0644"
+uid = 0
+gid = 0
+
+[files."/etc/group-"]
+mode = "0644"
+uid = 0
+gid = 0
+
+[files."/etc/shadow"]
+mode = "0640"
+uid = 0
+gid = 42
+
+[files."/etc/shadow-"]
+mode = "0600"
+uid = 0
+gid = 0
+
+[files."/etc/gshadow"]
+mode = "0640"
+uid = 0
+gid = 42
+
+[files."/etc/gshadow-"]
+mode = "0600"
+uid = 0
+gid = 0
+
+[files."/etc/ssh/sshd_config"]
+mode = "0600"
+uid = 0
+gid = 0
+
+[files."/etc/crontab"]
+mode = "0600"
+uid = 0
+gid = 0
+
+[files."/etc/cron.d"]
+mode = "0700"
+uid = 0
+gid = 0
+
+[files."/boot/grub/grub.cfg"]
+mode = "0600"
+uid = 0
+gid = 0
+
+[files."/etc/systemd/system/avahi-daemon.service"]
+symlink_target = "/dev/null"
+
+[files."/etc/systemd/system/cups.service"]
+symlink_target = "/dev/null"
+
+[files."/etc/systemd/system/systemd-timesyncd.service"]
+symlink_target = "/dev/null"
+
+[files."/tmp"]
+mode = "1777"
+uid = 0
+gid = 0

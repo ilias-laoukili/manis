@@ -1,0 +1,30 @@
+id = "PKG-001"
+title = "Trusted package repositories and GPG signature verification"
+description = "Verifies that APT (.list and DEB822 .sources) and YUM/DNF package repositories point strictly to trusted distribution domains and do not weaken GPG signature verification."
+severity = "high"
+profiles = ["cis-l1-server", "anssi-minimal", "anssi-intermediary", "anssi-reinforced"]
+
+remediation = """
+Remove untrusted third-party repository URIs from /etc/apt/sources.list, /etc/apt/sources.list.d/*, and /etc/yum.repos.d/*.
+Ensure GPG verification is enforced (remove [trusted=yes], 'Trusted: yes', AllowUnauthenticated, AllowInsecureRepositories, and gpgcheck=0).
+"""
+
+[references]
+cis = ["1.2.1.1", "1.2.1.2"]
+anssi = ["R59"]
+nist = ["SI-7", "SR-3"]
+
+
+[check]
+type = "package_repos"
+check_gpg = true
+trusted_domains = [
+  "ubuntu.com",
+  "canonical.com",
+  "debian.org",
+  "redhat.com",
+  "centos.org",
+  "fedoraproject.org",
+  "rockylinux.org",
+  "almalinux.org",
+]

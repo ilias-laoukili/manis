@@ -1,0 +1,22 @@
+id = "MAC-002"
+title = "Ensure AppArmor is enabled in bootloader kernel parameters"
+description = "Verifies that kernel boot arguments (/proc/cmdline or /etc/default/grub) enable AppArmor via apparmor=1 and security=apparmor."
+severity = "high"
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced"]
+artifact_uri = "etc/default/grub"
+remediation = '''
+Add 'apparmor=1 security=apparmor' to GRUB_CMDLINE_LINUX in /etc/default/grub and run:
+  sudo update-grub
+'''
+
+[references]
+cis = ["1.3.1.2"]
+anssi = []
+nist = ["AC-3", "CM-6"]
+
+[check]
+type = "file_content"
+mode = "regex"
+match_mode = "any_line"
+paths = ["/proc/cmdline", "/etc/default/grub"]
+pattern = '(apparmor=1.*security=apparmor|security=apparmor.*apparmor=1)'

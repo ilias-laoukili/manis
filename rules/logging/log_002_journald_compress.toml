@@ -1,0 +1,24 @@
+id = "LOG-002"
+title = "Enable systemd-journald log compression"
+description = "Verifies that /etc/systemd/journald.conf (or drop-ins) sets Compress=yes to conserve disk space for large audit logs."
+severity = "low"
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced", "linux-generic"]
+artifact_uri = "etc/systemd/journald.conf"
+remediation = '''
+Set Compress=yes in /etc/systemd/journald.conf.d/99-manis.conf:
+  [Journal]
+  Compress=yes
+Then restart: sudo systemctl restart systemd-journald
+'''
+
+[references]
+cis = ["6.1.1.3"]
+anssi = []
+nist = ["AU-4"]
+
+[check]
+type = "file_content"
+mode = "regex"
+match_mode = "any_line"
+paths = ["/etc/systemd/journald.conf", "/etc/systemd/journald.conf.d/*.conf"]
+pattern = '^Compress\s*=\s*yes\b'

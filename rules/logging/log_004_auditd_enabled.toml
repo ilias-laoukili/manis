@@ -1,0 +1,19 @@
+id = "LOG-004"
+title = "Ensure auditd service is enabled"
+description = "Verifies via /etc/systemd/system that auditd.service is enabled to start automatically at boot."
+severity = "high"
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced", "linux-generic"]
+remediation = '''
+Enable and start auditd:
+  sudo systemctl enable --now auditd.service
+'''
+
+[references]
+cis = ["6.2.1.2"]
+anssi = []
+nist = ["AU-12"]
+
+[check]
+type = "service_state"
+mode = "any_enabled"
+units = ["auditd.service"]

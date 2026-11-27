@@ -1,0 +1,21 @@
+id = "AUTH-015"
+title = "Enforce password reuse history >= 24 (pam_pwhistory)"
+description = "Verifies that pam_pwhistory remembers at least 24 previous passwords via /etc/pam.d/common-password or /etc/security/pwhistory.conf."
+severity = "medium"
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced"]
+artifact_uri = "etc/pam.d/common-password"
+remediation = '''
+Configure pam_pwhistory.so in /etc/pam.d/common-password or set 'remember = 24' in /etc/security/pwhistory.conf.
+'''
+
+[references]
+cis = ["5.3.3.3.1"]
+anssi = []
+nist = ["IA-5"]
+
+[check]
+type = "file_content"
+mode = "regex"
+match_mode = "any_line"
+paths = ["/etc/pam.d/common-password", "/etc/security/pwhistory.conf"]
+pattern = '(pam_pwhistory\.so.*remember=(2[4-9]|[3-9][0-9])|^remember\s*=\s*(2[4-9]|[3-9][0-9]))'

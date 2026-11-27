@@ -1,0 +1,3 @@
+/usr/sbin/sshd (enforce)
+/usr/bin/tcpdump (complain)
+/usr/sbin/custom (unconfined)

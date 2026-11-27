@@ -1,0 +1,30 @@
+id = "SSH-009"
+title = "Disable SSH PermitUserEnvironment and enable UsePAM"
+description = "Verifies that PermitUserEnvironment is disabled to prevent environment hijacking and UsePAM is enabled for account/session enforcement."
+severity = "high"
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced", "linux-generic"]
+remediation = """
+Set in /etc/ssh/sshd_config.d/01-hardening.conf:
+  PermitUserEnvironment no
+  UsePAM yes
+Then validate and reload: sudo sshd -t && sudo systemctl reload ssh
+"""
+
+[references]
+cis = ["5.1.21", "5.1.22"]
+anssi = []
+nist = ["CM-6", "IA-2"]
+
+[check]
+type = "sshd_config"
+file = "/etc/ssh/sshd_config"
+
+[[check.params]]
+key = "PermitUserEnvironment"
+op = "eq"
+value = "no"
+
+[[check.params]]
+key = "UsePAM"
+op = "eq"
+value = "yes"

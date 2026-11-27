@@ -1,0 +1,23 @@
+id = "FILE-009"
+title = "Restrict permissions and ownership on /etc/crontab"
+description = "Verifies that /etc/crontab is owned by root (allowed GIDs [0]) with permissions no more permissive than 0600."
+severity = "medium"
+profiles = ["cis-l1-server", "anssi-minimal", "anssi-intermediary", "anssi-reinforced", "linux-generic"]
+remediation = """
+Enforce ownership and restrictive permissions on /etc/crontab:
+  sudo chown root:root /etc/crontab
+  sudo chmod 0600 /etc/crontab
+"""
+
+[references]
+cis = ["2.4.1.2"]
+anssi = []
+nist = ["AC-6"]
+
+[check]
+type = "file_meta"
+path = "/etc/crontab"
+max_mode = "0600"
+expected_uid = 0
+allowed_gids = [0]
+on_missing = "skip"

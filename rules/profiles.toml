@@ -1,0 +1,23 @@
+[[profiles]]
+name = "cis-l1-server"
+description = "CIS Ubuntu Linux 24.04 LTS Benchmark v1.0.0 Level 1 Server (default)."
+
+[[profiles]]
+name = "all"
+description = "All embedded hardening rules across CIS, ANSSI-BP-028, and manual controls."
+
+[[profiles]]
+name = "anssi-minimal"
+description = "ANSSI-BP-028 v2.0 Minimal baseline controls."
+
+[[profiles]]
+name = "anssi-intermediary"
+description = "ANSSI-BP-028 v2.0 Intermediary controls (cumulative with minimal)."
+
+[[profiles]]
+name = "anssi-reinforced"
+description = "ANSSI-BP-028 v2.0 Reinforced controls (cumulative with intermediary)."
+
+[[profiles]]
+name = "linux-generic"
+description = "Distribution-independent Linux hardening checks: no dpkg, APT, UFW, AppArmor or Debian-family PAM (/etc/pam.d/common-*) dependency."

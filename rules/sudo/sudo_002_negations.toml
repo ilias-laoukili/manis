@@ -1,0 +1,21 @@
+id = "SUDO-002"
+title = "Forbid command negations (!) in sudoers"
+description = "Verifies that /etc/sudoers and /etc/sudoers.d/* do not rely on '!' command negations, which are trivially bypassable by copying or invoking binaries via alternate paths."
+severity = "medium"
+profiles = ["anssi-minimal", "anssi-intermediary", "anssi-reinforced", "linux-generic"]
+
+remediation = """
+Use 'sudo visudo' to replace deny-list sudoers rules (e.g. 'ALL, !/bin/su') with explicit allowlists enumerating only permitted commands with full absolute paths.
+"""
+
+[references]
+cis = []
+anssi = ["R42"]
+nist = ["AC-6"]
+
+
+[check]
+type = "sudoers"
+mode = "forbid_command_negations"
+file = "/etc/sudoers"
+include_dir = "/etc/sudoers.d"

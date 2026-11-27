@@ -1,0 +1,22 @@
+id = "AUTH-003"
+title = "Configure maximum password lifetime (PASS_MAX_DAYS)"
+description = "Verifies that PASS_MAX_DAYS in /etc/login.defs is configured between 1 and 365 days."
+severity = "medium"
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced", "linux-generic"]
+remediation = """
+Set PASS_MAX_DAYS to 365 or fewer in /etc/login.defs:
+  PASS_MAX_DAYS 365
+"""
+
+[references]
+cis = ["5.4.1.1"]
+anssi = []
+nist = ["IA-5"]
+
+[check]
+type = "file_content"
+mode = "key_value_bound"
+paths = ["/etc/login.defs"]
+key = "PASS_MAX_DAYS"
+min = 1
+max = 365

@@ -1,0 +1,31 @@
+Package: apparmor
+Status: install ok installed
+Version: 4.0.1
+
+Package: apparmor-utils
+Status: install ok installed
+Version: 4.0.1
+
+Package: chrony
+Status: install ok installed
+Version: 4.5
+
+Package: ufw
+Status: install ok installed
+Version: 0.36.2
+
+Package: libpam-pwquality
+Status: install ok installed
+Version: 1.4.5
+
+Package: auditd
+Status: install ok installed
+Version: 3.1.2
+
+Package: audispd-plugins
+Status: install ok installed
+Version: 3.1.2
+
+Package: aide
+Status: install ok installed
+Version: 0.18.6

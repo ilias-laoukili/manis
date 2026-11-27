@@ -1,0 +1,21 @@
+id = "MAN-003"
+title = "Verify physical console and server rack access controls (manual)"
+description = "Physical security of host consoles, BMC/IPMI interfaces, and datacenter racks cannot be automated from the OS and is tracked explicitly."
+severity = "medium"
+profiles = ["anssi-minimal", "anssi-intermediary", "anssi-reinforced"]
+artifact_uri = "system/physical-security"
+remediation = """
+Ensure servers reside in access-controlled facilities, disable unused USB/serial consoles, and isolate out-of-band BMC/IPMI networks.
+"""
+
+[references]
+cis = []
+anssi = []
+nist = ["PE-3"]
+
+[check]
+type = "manual"
+verification_steps = [
+  "Verify physical access logs and rack/cage locks for the host hardware.",
+  "Verify out-of-band management (iDRAC/iLO/IPMI) is isolated on a dedicated management VLAN."
+]

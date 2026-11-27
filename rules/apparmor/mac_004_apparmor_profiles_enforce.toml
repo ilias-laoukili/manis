@@ -1,0 +1,21 @@
+id = "MAC-004"
+title = "Ensure all AppArmor profiles are strictly enforcing (Level 2)"
+description = "Verifies that every loaded AppArmor profile in /sys/kernel/security/apparmor/profiles is in strict enforce mode with zero profiles in complain mode."
+severity = "medium"
+profiles = ["anssi-reinforced"]
+artifact_uri = "sys/kernel/security/apparmor/profiles"
+remediation = '''
+Switch all complain-mode AppArmor profiles to enforce mode:
+  sudo aa-enforce /etc/apparmor.d/*
+'''
+
+[references]
+cis = ["1.3.1.4"]
+anssi = []
+nist = ["AC-3"]
+
+[check]
+type = "file_content"
+mode = "apparmor_profiles"
+paths = ["/sys/kernel/security/apparmor/profiles"]
+require_enforce = true

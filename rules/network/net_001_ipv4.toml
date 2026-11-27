@@ -1,0 +1,115 @@
+id = "NET-001"
+title = "IPv4 network stack sysctl hardening"
+description = "Verifies IPv4 kernel network parameters blocking ICMP redirects, source routing, IP forwarding, and ARP spoofing while enabling SYN cookies, reverse path filtering, martian logging, and BPF JIT hardening."
+severity = "high"
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced", "linux-generic"]
+
+remediation = """
+Create /etc/sysctl.d/99-manis-network-ipv4.conf with the required IPv4 parameters (accept_redirects=0, secure_redirects=0, send_redirects=0, log_martians=1, tcp_syncookies=1, rp_filter=1, accept_source_route=0, icmp_echo_ignore_broadcasts=1, icmp_ignore_bogus_error_responses=1, ip_forward=0, net.core.bpf_jit_harden=2, arp_ignore=2, arp_filter=1) and run:
+  sudo sysctl --system
+"""
+
+[references]
+cis = ["3.3.1", "3.3.2", "3.3.3", "3.3.4", "3.3.5", "3.3.6", "3.3.7", "3.3.9", "3.3.10"]
+anssi = ["R12"]
+nist = ["CM-6", "SC-7"]
+
+
+[check]
+type = "sysctl"
+on_missing = "warn"
+
+[[check.params]]
+key = "net.ipv4.conf.all.accept_redirects"
+op = "eq"
+value = "0"
+
+[[check.params]]
+key = "net.ipv4.conf.default.accept_redirects"
+op = "eq"
+value = "0"
+
+[[check.params]]
+key = "net.ipv4.conf.all.secure_redirects"
+op = "eq"
+value = "0"
+
+[[check.params]]
+key = "net.ipv4.conf.default.secure_redirects"
+op = "eq"
+value = "0"
+
+[[check.params]]
+key = "net.ipv4.conf.all.send_redirects"
+op = "eq"
+value = "0"
+
+[[check.params]]
+key = "net.ipv4.conf.default.send_redirects"
+op = "eq"
+value = "0"
+
+[[check.params]]
+key = "net.ipv4.conf.all.log_martians"
+op = "eq"
+value = "1"
+
+[[check.params]]
+key = "net.ipv4.conf.default.log_martians"
+op = "eq"
+value = "1"
+
+[[check.params]]
+key = "net.ipv4.tcp_syncookies"
+op = "eq"
+value = "1"
+
+[[check.params]]
+key = "net.ipv4.conf.all.rp_filter"
+op = "eq"
+value = "1"
+
+[[check.params]]
+key = "net.ipv4.conf.default.rp_filter"
+op = "eq"
+value = "1"
+
+[[check.params]]
+key = "net.ipv4.conf.all.accept_source_route"
+op = "eq"
+value = "0"
+
+[[check.params]]
+key = "net.ipv4.conf.default.accept_source_route"
+op = "eq"
+value = "0"
+
+[[check.params]]
+key = "net.ipv4.icmp_echo_ignore_broadcasts"
+op = "eq"
+value = "1"
+
+[[check.params]]
+key = "net.ipv4.icmp_ignore_bogus_error_responses"
+op = "eq"
+value = "1"
+
+[[check.params]]
+key = "net.ipv4.ip_forward"
+op = "eq"
+value = "0"
+
+[[check.params]]
+key = "net.core.bpf_jit_harden"
+op = "eq"
+value = "2"
+
+[[check.params]]
+key = "net.ipv4.conf.all.arp_ignore"
+op = "eq"
+value = "2"
+
+[[check.params]]
+key = "net.ipv4.conf.all.arp_filter"
+op = "eq"
+value = "1"

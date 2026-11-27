@@ -1,0 +1,22 @@
+id = "LOG-008"
+title = "Configure protective action when audit disk is full"
+description = "Verifies that /etc/audit/auditd.conf sets disk_full_action to halt or single so the system does not operate unaudited when audit storage is exhausted."
+severity = "medium"
+profiles = ["cis-l1-server", "anssi-reinforced", "linux-generic"]
+remediation = '''
+Set in /etc/audit/auditd.conf:
+  disk_full_action = halt
+  disk_error_action = halt
+'''
+
+[references]
+cis = ["6.2.2.3"]
+anssi = []
+nist = ["AU-5"]
+
+[check]
+type = "file_content"
+mode = "regex"
+match_mode = "any_line"
+paths = ["/etc/audit/auditd.conf"]
+pattern = '^disk_full_action\s*=\s*(halt|single)\b'
