@@ -357,17 +357,33 @@ fn parse_deb822(content: &str) -> Vec<Vec<(String, String)>> {
     stanzas
 }
 
+/// Inspects a YUM/DNF `.repo` file.
+///
+/// `baseurl` is a list (`dnf.conf(5)`: URLs separated by spaces or commas) and, as shown in
+/// `yum.conf(5)`, may continue on the following lines: every URL is checked. `mirrorlist` and
+/// `metalink` hold a single URL.
 fn inspect_yum_repo(scan: &mut Scan<'_>, path: &str, content: &str) {
     let mut enabled = true;
     let mut stanza_urls: Vec<String> = Vec::new();
     let mut gpg_disabled = false;
+    let mut in_baseurl = false;
 
     for raw_line in content.lines() {
         let line = raw_line.trim();
         if line.is_empty() || line.starts_with('#') || line.starts_with(';') {
             continue;
         }
-        if line.starts_with('[') && line.ends_with(']') {
+        let is_section = line.starts_with('[') && line.ends_with(']');
+        // Continuation of a `baseurl` list: an indented line, or a line without `=`.
+        if in_baseurl
+            && !is_section
+            && (raw_line.starts_with(char::is_whitespace) || !line.contains('='))
+        {
+            stanza_urls.extend(split_url_list(line));
+            continue;
+        }
+        in_baseurl = false;
+        if is_section {
             flush_yum_stanza(scan, path, enabled, &mut stanza_urls, &mut gpg_disabled);
             enabled = true;
             continue;
@@ -377,9 +393,10 @@ fn inspect_yum_repo(scan: &mut Scan<'_>, path: &str, content: &str) {
             let val = val.trim();
             if key.eq_ignore_ascii_case("enabled") {
                 enabled = val != "0" && !val.eq_ignore_ascii_case("false");
-            } else if key.eq_ignore_ascii_case("baseurl")
-                || key.eq_ignore_ascii_case("mirrorlist")
-                || key.eq_ignore_ascii_case("metalink")
+            } else if key.eq_ignore_ascii_case("baseurl") {
+                stanza_urls.extend(split_url_list(val));
+                in_baseurl = true;
+            } else if key.eq_ignore_ascii_case("mirrorlist") || key.eq_ignore_ascii_case("metalink")
             {
                 stanza_urls.push(val.to_string());
             } else if key.eq_ignore_ascii_case("gpgcheck")
@@ -390,6 +407,14 @@ fn inspect_yum_repo(scan: &mut Scan<'_>, path: &str, content: &str) {
         }
     }
     flush_yum_stanza(scan, path, enabled, &mut stanza_urls, &mut gpg_disabled);
+}
+
+/// Splits a `dnf.conf(5)` list value: items separated by spaces or commas.
+fn split_url_list(value: &str) -> impl Iterator<Item = String> + '_ {
+    value
+        .split(|c: char| c == ',' || c.is_whitespace())
+        .filter(|item| !item.is_empty())
+        .map(ToString::to_string)
 }
 
 fn flush_yum_stanza(
@@ -956,5 +981,61 @@ APT::Get::AllowUnauthenticated \"false\"; // explicitly disabled
         for unknown in ["", "2", "-1", "0x", "maybe", "yes please"] {
             assert_eq!(apt_bool(unknown), None, "{unknown}");
         }
+    }
+
+    fn rocky_spec() -> PackageReposCheck {
+        PackageReposCheck {
+            trusted_domains: vec!["rockylinux.org".to_string()],
+            check_gpg: true,
+        }
+    }
+
+    fn audit_yum_repo(repo: &str) -> CheckOutcome {
+        let dir = tempdir().expect("tempdir");
+        write(dir.path(), "etc/yum.repos.d/rocky.repo", repo);
+        let view = RootFsSystemView::from_root(dir.path()).expect("view");
+        evaluate(&rocky_spec(), &view)
+    }
+
+    #[test]
+    fn checks_every_url_of_a_yum_baseurl_list() {
+        let trusted = "https://dl.rockylinux.org/pub/rocky/9/BaseOS/x86_64/os/";
+        let untrusted = "https://evil.example/repo/";
+        for baseurl in [
+            format!("baseurl={trusted} {untrusted}\n"),
+            format!("baseurl={trusted},{untrusted}\n"),
+            format!("baseurl={trusted}\n        {untrusted}\n"),
+            format!("baseurl={trusted}\n{untrusted}\n"),
+        ] {
+            let out = audit_yum_repo(&format!(
+                "[baseos]\nname=Rocky Linux 9 - BaseOS\n{baseurl}gpgcheck=1\nenabled=1\n"
+            ));
+            assert_eq!(out.status, Status::Fail, "{baseurl:?}");
+            assert_eq!(out.details.len(), 1, "{baseurl:?}");
+            assert!(out.details[0].contains(untrusted), "{baseurl:?}");
+        }
+    }
+
+    #[test]
+    fn passes_when_every_yum_baseurl_url_is_trusted() {
+        let out = audit_yum_repo(
+            "\
+[baseos]
+name=Rocky Linux 9 - BaseOS
+baseurl=https://dl.rockylinux.org/pub/rocky/9/BaseOS/x86_64/os/, https://download.rockylinux.org/pub/rocky/9/BaseOS/x86_64/os/
+        https://mirrors.rockylinux.org/pub/rocky/9/BaseOS/x86_64/os/?arch=x86_64&repo=BaseOS
+gpgcheck=1
+
+[appstream]
+name=Rocky Linux 9 - AppStream
+mirrorlist=https://mirrors.rockylinux.org/mirrorlist?arch=x86_64&repo=AppStream-9
+gpgcheck=1
+",
+        );
+        assert_eq!(out.status, Status::Pass, "{:?}", out.details);
+        assert_eq!(
+            out.actual.as_deref(),
+            Some("4 repository URI(s) across 1 file(s) trusted with GPG intact")
+        );
     }
 }
