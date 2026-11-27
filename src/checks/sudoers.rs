@@ -87,7 +87,12 @@ fn collect_sudoers_files(
     match view.read_dir(&spec.include_dir) {
         Ok(entries) => {
             for entry in entries {
-                if !entry.is_file || entry.name.contains('.') || entry.name.ends_with('~') {
+                // Symlinked drop-ins are read through their target; an unreachable target
+                // ends up in `unreadable` (WARN), never silently skipped.
+                if !(entry.is_file || entry.is_symlink)
+                    || entry.name.contains('.')
+                    || entry.name.ends_with('~')
+                {
                     continue;
                 }
                 match view.read_to_string(&entry.path) {
@@ -564,6 +569,39 @@ mod tests {
             .and_then(RootFsSystemView::with_fixture_meta)
             .expect("view");
         let out = evaluate(&base_spec(SudoersMode::ForbidBroadRootTargets), &view);
+        assert_eq!(out.status, Status::Warn);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_drop_in_is_inspected_and_dangling_one_warns() {
+        let dir = tempdir().expect("tempdir");
+        fs::create_dir_all(dir.path().join("etc/sudoers.d")).expect("mkdir");
+        fs::create_dir_all(dir.path().join("opt/acme")).expect("mkdir");
+        fs::write(dir.path().join("etc/sudoers"), "root ALL=(ALL) ALL\n").expect("write");
+        fs::write(
+            dir.path().join("opt/acme/sudoers"),
+            "deploy ALL=(ALL) NOPASSWD: ALL\n",
+        )
+        .expect("write");
+        std::os::unix::fs::symlink("/opt/acme/sudoers", dir.path().join("etc/sudoers.d/acme"))
+            .expect("symlink");
+
+        let view = RootFsSystemView::from_root(dir.path()).expect("view");
+        let out = evaluate(&base_spec(SudoersMode::ForbidNoPasswd), &view);
+        assert_eq!(out.status, Status::Fail);
+
+        let dangling = tempdir().expect("tempdir");
+        fs::create_dir_all(dangling.path().join("etc/sudoers.d")).expect("mkdir");
+        fs::write(dangling.path().join("etc/sudoers"), "root ALL=(ALL) ALL\n").expect("write");
+        std::os::unix::fs::symlink(
+            "/opt/acme/missing",
+            dangling.path().join("etc/sudoers.d/acme"),
+        )
+        .expect("symlink");
+
+        let view = RootFsSystemView::from_root(dangling.path()).expect("view");
+        let out = evaluate(&base_spec(SudoersMode::ForbidNoPasswd), &view);
         assert_eq!(out.status, Status::Warn);
     }
 }

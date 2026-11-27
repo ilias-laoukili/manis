@@ -373,4 +373,35 @@ mod tests {
         let out = evaluate(&spec, &view);
         assert_eq!(out.status, Status::Warn);
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn follows_symlinked_include_drop_ins() {
+        let dir = tempdir().expect("tempdir");
+        fs::create_dir_all(dir.path().join("etc/ssh/sshd_config.d")).expect("mkdir");
+        fs::create_dir_all(dir.path().join("usr/share/ssh")).expect("mkdir");
+        fs::write(
+            dir.path().join("etc/ssh/sshd_config"),
+            "Include /etc/ssh/sshd_config.d/*.conf\nPermitRootLogin no\n",
+        )
+        .expect("write main");
+        fs::write(
+            dir.path().join("usr/share/ssh/00-vendor.conf"),
+            "PermitRootLogin yes\n",
+        )
+        .expect("write vendor drop-in");
+        std::os::unix::fs::symlink(
+            "/usr/share/ssh/00-vendor.conf",
+            dir.path().join("etc/ssh/sshd_config.d/00-vendor.conf"),
+        )
+        .expect("symlink");
+
+        let view = RootFsSystemView::from_root(dir.path()).expect("view");
+        let spec = SshdConfigCheck {
+            file: "/etc/ssh/sshd_config".to_string(),
+            params: vec![param("PermitRootLogin", SshdOp::Eq, "no")],
+        };
+        // First match wins: the symlinked drop-in, included first, sets `yes`.
+        assert_eq!(evaluate(&spec, &view).status, Status::Fail);
+    }
 }

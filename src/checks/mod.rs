@@ -199,6 +199,10 @@ pub fn referenced_paths(check: &CheckSpec) -> Vec<String> {
 
 /// Expands a list of virtual paths, supporting a single `*` wildcard in the final path component
 /// (e.g. `/etc/profile.d/*.sh`), while recording any permission-denied directories.
+///
+/// Symlinked entries are kept so their target is read (resolved inside the root in `--root`
+/// mode). A link whose target cannot be reached (dangling, loop) is recorded as unreadable,
+/// never silently skipped.
 pub(crate) fn expand_virtual_paths(
     view: &dyn SystemView,
     patterns: &[String],
@@ -211,8 +215,20 @@ pub(crate) fn expand_virtual_paths(
             match view.read_dir(dir) {
                 Ok(entries) => {
                     for entry in entries {
-                        if entry.is_file && matches_simple_wildcard(&entry.name, glob) {
+                        if !matches_simple_wildcard(&entry.name, glob) {
+                            continue;
+                        }
+                        if entry.is_file {
                             files.push(entry.path);
+                        } else if entry.is_symlink {
+                            if view.exists(&entry.path) {
+                                files.push(entry.path);
+                            } else {
+                                unreadable.push(format!(
+                                    "{}: symbolic link target unavailable",
+                                    entry.path
+                                ));
+                            }
                         }
                     }
                 }
@@ -250,5 +266,125 @@ fn matches_simple_wildcard(name: &str, pattern: &str) -> bool {
             && name.ends_with(suffix)
     } else {
         name == pattern
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use crate::model::Status;
+    use crate::rules::schema::PackageReposCheck;
+    use crate::sys::RootFsSystemView;
+    use std::fs;
+    use std::os::unix::fs::symlink;
+    use std::path::Path;
+    use tempfile::tempdir;
+
+    fn write(root: &Path, rel: &str, content: &str) {
+        let path = root.join(rel);
+        fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
+        fs::write(path, content).expect("write");
+    }
+
+    fn link(root: &Path, rel: &str, target: &str) {
+        let path = root.join(rel);
+        fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
+        symlink(target, path).expect("symlink");
+    }
+
+    fn debian_repos_spec() -> PackageReposCheck {
+        PackageReposCheck {
+            trusted_domains: vec!["debian.org".to_string()],
+            check_gpg: true,
+        }
+    }
+
+    #[test]
+    fn expands_symlinked_drop_ins_and_reports_unreachable_targets() {
+        let root = tempdir().expect("tempdir");
+        write(root.path(), "etc/apt/sources.list.d/real.sources", "x");
+        write(root.path(), "srv/repos/extra.sources", "x");
+        link(
+            root.path(),
+            "etc/apt/sources.list.d/extra.sources",
+            "/srv/repos/extra.sources",
+        );
+        link(
+            root.path(),
+            "etc/apt/sources.list.d/dangling.sources",
+            "/srv/repos/missing.sources",
+        );
+        link(
+            root.path(),
+            "etc/apt/sources.list.d/loop.sources",
+            "loop.sources",
+        );
+        link(
+            root.path(),
+            "etc/apt/sources.list.d/other.list",
+            "/srv/repos/extra.sources",
+        );
+
+        let view = RootFsSystemView::from_root(root.path()).expect("view");
+        let (files, unreadable) =
+            expand_virtual_paths(&view, &["/etc/apt/sources.list.d/*.sources".to_string()]);
+        assert_eq!(
+            files,
+            vec![
+                "/etc/apt/sources.list.d/extra.sources",
+                "/etc/apt/sources.list.d/real.sources",
+            ]
+        );
+        assert_eq!(
+            unreadable,
+            vec![
+                "/etc/apt/sources.list.d/dangling.sources: symbolic link target unavailable",
+                "/etc/apt/sources.list.d/loop.sources: symbolic link target unavailable",
+            ]
+        );
+    }
+
+    #[test]
+    fn symlinked_untrusted_apt_source_is_inspected() {
+        let root = tempdir().expect("tempdir");
+        write(
+            root.path(),
+            "srv/repos/evil.sources",
+            "Types: deb\nURIs: http://evil.example.com/debian\nSuites: bookworm\nComponents: main\n",
+        );
+        link(
+            root.path(),
+            "etc/apt/sources.list.d/evil.sources",
+            "/srv/repos/evil.sources",
+        );
+
+        let view = RootFsSystemView::from_root(root.path()).expect("view");
+        let out = package_repos::evaluate(&debian_repos_spec(), &view);
+        assert_eq!(out.status, Status::Fail);
+        assert!(out.details[0].contains("http://evil.example.com/debian"));
+    }
+
+    #[test]
+    fn dangling_apt_source_link_warns_instead_of_passing() {
+        // Typical offline image: a drop-in points into /run, which only exists at runtime.
+        let root = tempdir().expect("tempdir");
+        write(
+            root.path(),
+            "etc/apt/sources.list.d/debian.sources",
+            "Types: deb\nURIs: http://deb.debian.org/debian\nSuites: bookworm\nComponents: main\n",
+        );
+        link(
+            root.path(),
+            "etc/apt/sources.list.d/cloud.sources",
+            "/run/cloud/cloud.sources",
+        );
+
+        let view = RootFsSystemView::from_root(root.path()).expect("view");
+        let out = package_repos::evaluate(&debian_repos_spec(), &view);
+        assert_eq!(out.status, Status::Warn);
+        assert!(out
+            .details
+            .iter()
+            .any(|d| d.contains("cloud.sources: symbolic link target unavailable")));
     }
 }
