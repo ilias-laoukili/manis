@@ -29,7 +29,7 @@ pub enum Command {
 #[derive(Debug, Args)]
 pub struct AuditArgs {
     /// Compliance profile to evaluate (cis-l1-server, all, anssi-minimal,
-    /// anssi-intermediary, anssi-reinforced).
+    /// anssi-intermediary, anssi-reinforced, linux-generic).
     #[arg(long, default_value = "cis-l1-server")]
     pub profile: String,
 

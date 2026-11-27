@@ -2,7 +2,7 @@ id = "SSH-001"
 title = "Restrict permissions on /etc/ssh/sshd_config"
 description = "Verifies that /etc/ssh/sshd_config is owned by root:root with permissions 0600 or more restrictive."
 severity = "high"
-profiles = ["cis-l1-server", "anssi-minimal", "anssi-intermediary", "anssi-reinforced"]
+profiles = ["cis-l1-server", "anssi-minimal", "anssi-intermediary", "anssi-reinforced", "linux-generic"]
 remediation = """
 Restrict permissions on /etc/ssh/sshd_config:
   sudo chown root:root /etc/ssh/sshd_config

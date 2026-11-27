@@ -2,7 +2,7 @@ id = "NET-002"
 title = "IPv6 stack disabled or hardened"
 description = "Verifies that IPv6 is either disabled (via net.ipv6.conf.all.disable_ipv6=1 or kernel boot parameter ipv6.disable=1) or hardened against source routing, router advertisements, ICMP redirects, and packet forwarding."
 severity = "medium"
-profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced"]
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced", "linux-generic"]
 
 remediation = """
 Either disable IPv6 if unused:

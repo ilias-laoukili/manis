@@ -151,7 +151,7 @@ fn compare_int(raw: &str, expected: Option<&str>, pred: impl FnOnce(i64, i64) ->
     pred(cur, exp)
 }
 
-fn sysctl_key_to_path(key: &str) -> String {
+pub(crate) fn sysctl_key_to_path(key: &str) -> String {
     format!("/proc/sys/{}", key.replace('.', "/"))
 }
 

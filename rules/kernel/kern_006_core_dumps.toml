@@ -2,7 +2,7 @@ id = "KERN-006"
 title = "Restrict core dumps for setuid processes"
 description = "Verifies that fs.suid_dumpable is set to 0 so privileged processes do not write sensitive memory contents to core dump files."
 severity = "medium"
-profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced"]
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced", "linux-generic"]
 remediation = """
 Set fs.suid_dumpable in /etc/sysctl.d/99-manis-kernel.conf:
   fs.suid_dumpable = 0

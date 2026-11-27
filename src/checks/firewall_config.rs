@@ -5,6 +5,34 @@ use crate::checks::CheckOutcome;
 use crate::rules::schema::{FirewallConfigCheck, FirewallConfigMode};
 use crate::sys::SystemView;
 
+/// UFW main configuration (`ENABLED=yes`).
+pub const UFW_CONF: &str = "/etc/ufw/ufw.conf";
+/// UFW default policies (`DEFAULT_INPUT_POLICY`).
+pub const UFW_DEFAULTS: &str = "/etc/default/ufw";
+/// UFW rules applied before user rules (loopback handling).
+pub const UFW_BEFORE_RULES: &str = "/etc/ufw/before.rules";
+/// nftables ruleset loaded by `nftables.service` on the Debian family.
+pub const NFTABLES_CONF: &str = "/etc/nftables.conf";
+/// systemd unit path checked for a masked `nftables.service`.
+pub const NFTABLES_UNIT: &str = "/etc/systemd/system/nftables.service";
+/// systemd `sysinit.target.wants` entry that enables `nftables.service`.
+pub const NFTABLES_SYSINIT_WANTS: &str =
+    "/etc/systemd/system/sysinit.target.wants/nftables.service";
+/// systemd `multi-user.target.wants` entry that enables `nftables.service`.
+pub const NFTABLES_MULTI_USER_WANTS: &str =
+    "/etc/systemd/system/multi-user.target.wants/nftables.service";
+
+/// Every path this primitive may read.
+pub const CONFIG_PATHS: &[&str] = &[
+    UFW_CONF,
+    UFW_DEFAULTS,
+    UFW_BEFORE_RULES,
+    NFTABLES_CONF,
+    NFTABLES_UNIT,
+    NFTABLES_SYSINIT_WANTS,
+    NFTABLES_MULTI_USER_WANTS,
+];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ActiveFirewall {
     Ufw,
@@ -13,8 +41,8 @@ enum ActiveFirewall {
 
 /// Evaluates host firewall enablement, default deny input policy, and loopback rules.
 pub fn evaluate(spec: &FirewallConfigCheck, view: &dyn SystemView) -> CheckOutcome {
-    let ufw_conf = view.read_to_string("/etc/ufw/ufw.conf");
-    let nft_conf = view.read_to_string("/etc/nftables.conf");
+    let ufw_conf = view.read_to_string(UFW_CONF);
+    let nft_conf = view.read_to_string(NFTABLES_CONF);
 
     let ufw_present = ufw_conf.is_ok();
     let nft_present = nft_conf.is_ok();
@@ -22,10 +50,10 @@ pub fn evaluate(spec: &FirewallConfigCheck, view: &dyn SystemView) -> CheckOutco
     if !ufw_present && !nft_present {
         let mut details = Vec::new();
         if let Err(err) = ufw_conf {
-            details.push(format!("/etc/ufw/ufw.conf: {err}"));
+            details.push(format!("{UFW_CONF}: {err}"));
         }
         if let Err(err) = nft_conf {
-            details.push(format!("/etc/nftables.conf: {err}"));
+            details.push(format!("{NFTABLES_CONF}: {err}"));
         }
         return CheckOutcome::warn(
             expected_label(spec.mode),
@@ -143,24 +171,23 @@ fn is_nftables_active(content: &str, view: &dyn SystemView) -> bool {
         return false;
     }
     let masked = view
-        .read_link("/etc/systemd/system/nftables.service")
+        .read_link(NFTABLES_UNIT)
         .is_ok_and(|t| t == "/dev/null");
     if masked {
         return false;
     }
-    view.exists("/etc/systemd/system/sysinit.target.wants/nftables.service")
-        || view.exists("/etc/systemd/system/multi-user.target.wants/nftables.service")
+    view.exists(NFTABLES_SYSINIT_WANTS) || view.exists(NFTABLES_MULTI_USER_WANTS)
 }
 
 fn eval_ufw_default_deny(view: &dyn SystemView) -> CheckOutcome {
     let expected = expected_label(FirewallConfigMode::DefaultDenyInput);
-    let content = match view.read_to_string("/etc/default/ufw") {
+    let content = match view.read_to_string(UFW_DEFAULTS) {
         Ok(c) => c,
         Err(err) => {
             return CheckOutcome::warn(
                 expected,
-                "/etc/default/ufw unavailable",
-                vec![format!("/etc/default/ufw: {err}")],
+                format!("{UFW_DEFAULTS} unavailable"),
+                vec![format!("{UFW_DEFAULTS}: {err}")],
             );
         }
     };
@@ -214,13 +241,13 @@ fn eval_nft_default_deny(content: &str) -> CheckOutcome {
 
 fn eval_ufw_loopback(view: &dyn SystemView) -> CheckOutcome {
     let expected = expected_label(FirewallConfigMode::LoopbackConfigured);
-    let content = match view.read_to_string("/etc/ufw/before.rules") {
+    let content = match view.read_to_string(UFW_BEFORE_RULES) {
         Ok(c) => c,
         Err(err) => {
             return CheckOutcome::warn(
                 expected,
-                "/etc/ufw/before.rules unavailable",
-                vec![format!("/etc/ufw/before.rules: {err}")],
+                format!("{UFW_BEFORE_RULES} unavailable"),
+                vec![format!("{UFW_BEFORE_RULES}: {err}")],
             );
         }
     };

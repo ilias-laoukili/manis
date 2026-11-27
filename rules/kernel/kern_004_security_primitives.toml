@@ -2,7 +2,7 @@ id = "KERN-004"
 title = "Kernel security primitives (SECCOMP and Yama LSM)"
 description = "Verifies that the kernel is built with SECCOMP syscall filtering, LSM security hooks, and Yama ptrace restrictions enabled."
 severity = "high"
-profiles = ["anssi-intermediary", "anssi-reinforced"]
+profiles = ["anssi-intermediary", "anssi-reinforced", "linux-generic"]
 
 remediation = """
 Ensure your distribution kernel is compiled with:

@@ -232,6 +232,8 @@ impl RuleRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::checks::referenced_paths;
+    use schema::CheckSpec;
 
     #[test]
     fn embedded_catalog_loads_all_103_rules_validly() {
@@ -272,5 +274,79 @@ mod tests {
         let reinforced = reg.rules_for_profile("anssi-reinforced").unwrap();
         assert!(reinforced.iter().any(|r| r.id == "MAC-004"));
         assert!(reg.rules_for_profile("anssi-minimal").unwrap().len() >= 20);
+    }
+
+    /// Rules of the `linux-generic` profile: none depends on a particular distribution.
+    const LINUX_GENERIC_RULES: &[&str] = &[
+        "AUTH-001", "AUTH-003", "AUTH-004", "AUTH-005", "AUTH-006", "AUTH-007", "AUTH-008",
+        "AUTH-010", "AUTH-011", "AUTH-013", "AUTH-014", "AUTH-018", "FILE-001", "FILE-002",
+        "FILE-003", "FILE-004", "FILE-005", "FILE-006", "FILE-007", "FILE-008", "FILE-009",
+        "FILE-010", "FS-001", "FS-002", "FS-003", "FS-004", "FS-005", "FS-006", "FS-007", "FS-008",
+        "FS-009", "KERN-001", "KERN-002", "KERN-003", "KERN-004", "KERN-005", "KERN-006",
+        "KERN-007", "LOG-001", "LOG-002", "LOG-004", "LOG-005", "LOG-006", "LOG-007", "LOG-008",
+        "LOG-009", "LOG-010", "LOG-011", "LOG-012", "LOG-013", "NET-001", "NET-002", "SSH-001",
+        "SSH-002", "SSH-003", "SSH-004", "SSH-005", "SSH-006", "SSH-007", "SSH-008", "SSH-009",
+        "SSH-010", "SSH-011", "SUDO-001", "SUDO-002", "SUDO-003", "SUDO-004", "SUDO-005",
+        "SVC-004", "SVC-005", "SVC-006", "SVC-008", "SVC-009",
+    ];
+
+    /// Paths that tie a rule to the Debian family: dpkg, APT, UFW and the Debian PAM layout.
+    const DISTRIBUTION_SPECIFIC_PREFIXES: &[&str] = &[
+        "/var/lib/dpkg/status",
+        "/etc/apt/",
+        "/etc/pam.d/common-",
+        "/etc/ufw/",
+    ];
+
+    #[test]
+    fn linux_generic_profile_has_no_distribution_specific_dependency() {
+        let reg = RuleRegistry::load_embedded().expect("registry");
+        let rules = reg
+            .rules_for_profile("linux-generic")
+            .expect("linux-generic profile");
+        let ids: Vec<&str> = rules.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(ids, LINUX_GENERIC_RULES);
+
+        for rule in rules {
+            assert!(
+                !matches!(
+                    rule.check,
+                    CheckSpec::PackageState(_)
+                        | CheckSpec::PackageRepos(_)
+                        | CheckSpec::FirewallConfig(_)
+                ),
+                "{} uses a dpkg, APT or UFW primitive",
+                rule.id
+            );
+            for path in referenced_paths(&rule.check) {
+                assert!(
+                    !DISTRIBUTION_SPECIFIC_PREFIXES
+                        .iter()
+                        .any(|prefix| path.starts_with(prefix)),
+                    "{} references the distribution-specific path {path}",
+                    rule.id
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn referenced_paths_expose_the_dependencies_linux_generic_forbids() {
+        // The invariant above only means something if excluded rules are really caught.
+        let reg = RuleRegistry::load_embedded().expect("registry");
+        for (id, expected) in [
+            ("SVC-001", "/var/lib/dpkg/status"),
+            ("PKG-001", "/etc/apt/sources.list"),
+            ("AUTH-002", "/etc/pam.d/common-session"),
+            ("AUTH-012", "/etc/pam.d/common-auth"),
+            ("FW-002", "/etc/ufw/ufw.conf"),
+        ] {
+            let rule = reg.find_by_identifier(id)[0];
+            assert_eq!(rule.id, id);
+            assert!(
+                referenced_paths(&rule.check).iter().any(|p| p == expected),
+                "{id} should reference {expected}"
+            );
+        }
     }
 }

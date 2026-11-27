@@ -2,7 +2,7 @@ id = "SVC-006"
 title = "Ensure RPC portmapper (rpcbind) is disabled or masked"
 description = "Verifies via /etc/systemd/system that RPC portmapper (rpcbind) is not enabled in any systemd target wants directory or is explicitly masked to /dev/null."
 severity = "medium"
-profiles = ["cis-l1-server", "anssi-minimal", "anssi-intermediary", "anssi-reinforced"]
+profiles = ["cis-l1-server", "anssi-minimal", "anssi-intermediary", "anssi-reinforced", "linux-generic"]
 remediation = '''
 Stop, disable, and mask the service (or purge its package if unused):
   sudo systemctl --now mask <unit>

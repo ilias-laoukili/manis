@@ -493,3 +493,130 @@ fn fixture_meta_overlay_is_ignored_unless_opted_in() {
         .expect("audit --fixture-meta without overlay");
     assert_eq!(without_overlay.status.code(), Some(2));
 }
+
+#[test]
+fn debian_12_fixture_trusts_debian_repositories_and_flags_inetutils_telnetd() {
+    let out = manis_bin()
+        .args(["audit", "--profile", "all", "--format", "json", "--root"])
+        .arg(fixture_path("debian-12"))
+        .output()
+        .expect("audit debian-12 fixture");
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let report: AuditReport = serde_json::from_slice(&out.stdout).expect("valid JSON report");
+    let result = |id: &str| {
+        report
+            .results
+            .iter()
+            .find(|r| r.id == id)
+            .unwrap_or_else(|| panic!("{id} result"))
+    };
+
+    // One-line `.list`, DEB822 `.sources` and a `mirror+file` list are all trusted.
+    let pkg001 = result("PKG-001");
+    assert_eq!(pkg001.status, Status::Pass);
+    assert_eq!(
+        pkg001.actual.as_deref(),
+        Some("7 repository URI(s) across 3 file(s) trusted with GPG intact")
+    );
+
+    // On Debian, `telnetd` is only transitional: the real server package must still FAIL.
+    let svc003 = result("SVC-003");
+    assert_eq!(svc003.status, Status::Fail);
+    assert_eq!(
+        svc003.actual.as_deref(),
+        Some("installed: inetutils-telnetd")
+    );
+
+    for res in &report.results {
+        assert_ne!(res.status, Status::Error, "rule {} must not ERROR", res.id);
+    }
+}
+
+#[test]
+fn linux_generic_profile_runs_on_a_minimal_non_debian_rootfs() {
+    // A Rocky-Linux-like tree: no dpkg database, no APT, no UFW and no Debian PAM layout.
+    let root = tempdir().expect("tempdir");
+    for (rel, content) in [
+        (
+            "etc/os-release",
+            "NAME=\"Rocky Linux\"\nVERSION_ID=\"9.5\"\nID=\"rocky\"\nID_LIKE=\"rhel centos fedora\"\n",
+        ),
+        (
+            "etc/passwd",
+            "root:x:0:0:root:/root:/bin/bash\nbin:x:1:1:bin:/bin:/sbin/nologin\nsshd:x:74:74:Privilege-separated SSH:/usr/share/empty.sshd:/sbin/nologin\n",
+        ),
+        (
+            "etc/shadow",
+            "root:!locked::0:99999:7:::\nbin:*:19000:0:99999:7:::\nsshd:!!:19000::::::\n",
+        ),
+        ("etc/group", "root:x:0:\nbin:x:1:\nsshd:x:74:\n"),
+        (
+            "etc/login.defs",
+            "PASS_MAX_DAYS 365\nPASS_MIN_DAYS 1\nUMASK 077\n",
+        ),
+        (
+            "etc/ssh/sshd_config",
+            "Include /etc/ssh/sshd_config.d/*.conf\nPermitRootLogin no\n",
+        ),
+        ("etc/sudoers", "Defaults use_pty\nroot ALL=(ALL) ALL\n"),
+        (
+            "etc/yum.repos.d/rocky.repo",
+            "[baseos]\nname=Rocky Linux $releasever - BaseOS\nmirrorlist=https://mirrors.rockylinux.org/mirrorlist?arch=$basearch&repo=BaseOS-$releasever\ngpgcheck=1\nenabled=1\n",
+        ),
+    ] {
+        let path = root.path().join(rel);
+        std::fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
+        std::fs::write(path, content).expect("write");
+    }
+
+    let out = manis_bin()
+        .args([
+            "audit",
+            "--profile",
+            "linux-generic",
+            "--format",
+            "json",
+            "--root",
+        ])
+        .arg(root.path())
+        .output()
+        .expect("audit linux-generic on a non-Debian rootfs");
+    assert!(
+        matches!(out.status.code(), Some(0 | 1)),
+        "unexpected exit {:?}, stderr: {}",
+        out.status.code(),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let report: AuditReport = serde_json::from_slice(&out.stdout).expect("valid JSON report");
+    assert_eq!(report.profile, "linux-generic");
+    assert_eq!(report.summary.total, 73);
+    assert_eq!(report.summary.error, 0);
+
+    for res in &report.results {
+        let uri = res.artifact_uri.as_deref().unwrap_or("");
+        for forbidden in ["var/lib/dpkg", "etc/apt/", "etc/ufw/", "etc/pam.d/common-"] {
+            assert!(
+                !uri.starts_with(forbidden),
+                "rule {} points at the Debian-specific artifact {uri}",
+                res.id
+            );
+        }
+    }
+
+    // The generic checks really evaluate this tree.
+    let status_of = |id: &str| {
+        report
+            .results
+            .iter()
+            .find(|r| r.id == id)
+            .unwrap_or_else(|| panic!("{id} result"))
+            .status
+    };
+    assert_eq!(status_of("AUTH-005"), Status::Pass);
+    assert_eq!(status_of("SSH-002"), Status::Pass);
+}

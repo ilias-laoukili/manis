@@ -2,7 +2,7 @@ id = "AUTH-010"
 title = "Enforce minimum password length >= 14 (pwquality)"
 description = "Verifies that /etc/security/pwquality.conf sets minlen >= 14 characters."
 severity = "medium"
-profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced"]
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced", "linux-generic"]
 remediation = '''
 Set minlen in /etc/security/pwquality.conf (or /etc/security/pwquality.conf.d/99-manis.conf):
   minlen = 14

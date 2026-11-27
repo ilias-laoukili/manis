@@ -2,7 +2,7 @@ id = "LOG-006"
 title = "Configure sufficient audit_backlog_limit (>= 8192)"
 description = "Verifies that /proc/cmdline or /etc/default/grub configures audit_backlog_limit=8192 or greater to avoid dropping early boot audit records."
 severity = "low"
-profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced"]
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced", "linux-generic"]
 artifact_uri = "etc/default/grub"
 remediation = '''
 Add 'audit_backlog_limit=8192' to GRUB_CMDLINE_LINUX in /etc/default/grub and run:

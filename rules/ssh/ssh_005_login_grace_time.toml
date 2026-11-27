@@ -2,7 +2,7 @@ id = "SSH-005"
 title = "Restrict SSH authentication grace period (LoginGraceTime)"
 description = "Verifies that LoginGraceTime is configured between 1 and 60 seconds to prevent connection exhaustion."
 severity = "medium"
-profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced"]
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced", "linux-generic"]
 remediation = """
 Set in /etc/ssh/sshd_config.d/01-hardening.conf:
   LoginGraceTime 60

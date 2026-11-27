@@ -2,7 +2,7 @@ id = "LOG-001"
 title = "Configure systemd-journald persistent log storage"
 description = "Verifies that /etc/systemd/journald.conf (or drop-ins) sets Storage=persistent so logs survive system reboots."
 severity = "medium"
-profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced"]
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced", "linux-generic"]
 artifact_uri = "etc/systemd/journald.conf"
 remediation = '''
 Set Storage=persistent in /etc/systemd/journald.conf.d/99-manis.conf:

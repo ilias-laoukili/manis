@@ -2,7 +2,7 @@ id = "SUDO-003"
 title = "Enforce sudo use_pty, logfile, and authentication timeout Defaults"
 description = "Verifies that sudoers globally configures Defaults use_pty, Defaults logfile, and Defaults timestamp_timeout <= 15 minutes."
 severity = "medium"
-profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced"]
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced", "linux-generic"]
 remediation = """
 Use 'sudo visudo' to add:
   Defaults use_pty

@@ -2,7 +2,7 @@ id = "LOG-011"
 title = "Audit modifications to user and group identity files"
 description = "Verifies that /etc/audit/rules.d/*.rules watches /etc/passwd, /etc/shadow, /etc/group, and /etc/gshadow for modifications."
 severity = "high"
-profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced"]
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced", "linux-generic"]
 artifact_uri = "etc/audit/rules.d/50-identity.rules"
 remediation = '''
 Add identity watch rules to /etc/audit/rules.d/50-identity.rules and run 'sudo augenrules --load':

@@ -2,7 +2,7 @@ id = "FS-002"
 title = "Audit SUID/SGID binaries against whitelist and forbid world-writable SUID/SGID"
 description = "Scans the filesystem for SUID and SGID regular files, flagging any binary absent from the approved whitelist as well as any world-writable SUID/SGID file."
 severity = "critical"
-profiles = ["cis-l1-server", "anssi-minimal", "anssi-intermediary", "anssi-reinforced"]
+profiles = ["cis-l1-server", "anssi-minimal", "anssi-intermediary", "anssi-reinforced", "linux-generic"]
 
 remediation = """
 Inspect every reported SUID/SGID binary. Immediately remove world-writable permissions and strip unnecessary SUID/SGID bits:

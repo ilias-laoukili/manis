@@ -2,7 +2,7 @@ id = "FS-009"
 title = "Ensure world-writable files and directories are secured"
 description = "Scans the filesystem (excluding /proc, /sys, /dev, /run) to verify that no world-writable regular files exist and that every world-writable directory has the sticky bit (+t) set."
 severity = "high"
-profiles = ["cis-l1-server", "anssi-minimal", "anssi-intermediary", "anssi-reinforced"]
+profiles = ["cis-l1-server", "anssi-minimal", "anssi-intermediary", "anssi-reinforced", "linux-generic"]
 artifact_uri = "tmp"
 remediation = '''
 Remove world-writable permissions from regular files and enforce the sticky bit on shared world-writable directories:

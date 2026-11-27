@@ -2,7 +2,7 @@ id = "FS-001"
 title = "Filesystem partitioning and restrictive mount options"
 description = "Verifies mandatory dedicated partitions (/tmp, /var, /home) with restrictive mount flags, and enforces hardening options on reinforced mounts (/var/tmp, /var/log, /boot, /usr, /dev/shm, and /proc hidepid) whenever mounted separately."
 severity = "high"
-profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced"]
+profiles = ["cis-l1-server", "anssi-intermediary", "anssi-reinforced", "linux-generic"]
 
 remediation = """
 Configure dedicated partitions and restrictive mount options in /etc/fstab (and remount):

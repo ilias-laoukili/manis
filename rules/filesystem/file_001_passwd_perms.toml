@@ -2,7 +2,7 @@ id = "FILE-001"
 title = "Restrict permissions and ownership on /etc/passwd"
 description = "Verifies that /etc/passwd is owned by root (allowed GIDs [0]) with permissions no more permissive than 0644."
 severity = "high"
-profiles = ["cis-l1-server", "anssi-minimal", "anssi-intermediary", "anssi-reinforced"]
+profiles = ["cis-l1-server", "anssi-minimal", "anssi-intermediary", "anssi-reinforced", "linux-generic"]
 remediation = """
 Enforce ownership and restrictive permissions on /etc/passwd:
   sudo chown root:root /etc/passwd
