@@ -1,7 +1,7 @@
 //! `file_content` check primitive for shell timeouts (`TMOUT`), `umask`, `key_value_bound`,
 //! account integrity (`/etc/passwd`, `/etc/shadow`), login banners, and regex assertions.
 
-use crate::checks::{expand_virtual_paths, CheckOutcome};
+use crate::checks::{CheckOutcome, expand_virtual_paths};
 use crate::rules::schema::{FileContentCheck, FileContentMode, RegexMatchMode};
 use crate::sys::SystemView;
 use regex::Regex;
@@ -164,7 +164,7 @@ fn eval_key_value_bound(spec: &FileContentCheck, view: &dyn SystemView) -> Check
     match raw.parse::<i64>() {
         Ok(val) => {
             let compliant = (spec.allow_zero && val == 0)
-                || (spec.min.map_or(true, |m| val >= m) && spec.max.map_or(true, |m| val <= m));
+                || (spec.min.is_none_or(|m| val >= m) && spec.max.is_none_or(|m| val <= m));
             if compliant {
                 finalize_content_outcome(
                     expected,
@@ -307,8 +307,7 @@ fn eval_apparmor_profiles(spec: &FileContentCheck, view: &dyn SystemView) -> Che
 fn eval_system_accounts_nologin(spec: &FileContentCheck, view: &dyn SystemView) -> CheckOutcome {
     const EXEMPT_ACCOUNTS: &[&str] = &["root", "sync", "shutdown", "halt"];
     let path = spec.paths.first().map_or("/etc/passwd", String::as_str);
-    let expected =
-        "all system accounts (UID < 1000, excluding root/sync/shutdown/halt) use a non-interactive shell (nologin/false)";
+    let expected = "all system accounts (UID < 1000, excluding root/sync/shutdown/halt) use a non-interactive shell (nologin/false)";
 
     let content = match view.read_to_string(path) {
         Ok(c) => c,
@@ -951,7 +950,7 @@ fn join_set(set: &BTreeSet<String>) -> String {
 mod tests {
     use super::*;
     use crate::model::Status;
-    use crate::sys::{rootfs::FIXTURE_META_FILE, RootFsSystemView};
+    use crate::sys::{RootFsSystemView, rootfs::FIXTURE_META_FILE};
     use std::fs;
     use tempfile::tempdir;
 

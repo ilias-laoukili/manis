@@ -6,7 +6,7 @@
 //! APT's `StringToBool`, and `mirror+file:` sources are resolved through their mirror list inside
 //! the audited root.
 
-use crate::checks::{expand_virtual_paths, CheckOutcome};
+use crate::checks::{CheckOutcome, expand_virtual_paths};
 use crate::rules::schema::PackageReposCheck;
 use crate::sys::SystemView;
 
@@ -299,7 +299,7 @@ fn inspect_deb822_sources(scan: &mut Scan<'_>, path: &str, content: &str) {
         let enabled = stanza
             .iter()
             .find(|(key, _)| key.eq_ignore_ascii_case("Enabled"))
-            .map_or(true, |(_, value)| apt_bool(value) != Some(false));
+            .is_none_or(|(_, value)| apt_bool(value) != Some(false));
         if !enabled {
             continue;
         }
@@ -571,19 +571,15 @@ fn extract_uri_host(uri: &str) -> Option<String> {
         host_port.split(':').next()?
     };
     let host = host.trim().trim_end_matches('.').to_ascii_lowercase();
-    if host.is_empty() {
-        None
-    } else {
-        Some(host)
-    }
+    if host.is_empty() { None } else { Some(host) }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::model::Status;
-    use crate::sys::rootfs::FIXTURE_META_FILE;
     use crate::sys::RootFsSystemView;
+    use crate::sys::rootfs::FIXTURE_META_FILE;
     use std::fs;
     use std::path::Path;
     use tempfile::tempdir;

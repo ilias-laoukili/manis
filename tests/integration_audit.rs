@@ -1,7 +1,7 @@
 use manis::config::{SimpleDate, UserConfig};
 use manis::engine::{run_audit, run_audit_with_config};
 use manis::model::{AuditReport, Severity, Status};
-use manis::report::{render_report, OutputFormat};
+use manis::report::{OutputFormat, render_report};
 use manis::rules::RuleRegistry;
 use manis::sys::RootFsSystemView;
 use std::path::PathBuf;
@@ -248,10 +248,12 @@ extra_trusted_domains = ["untrusted.example.com"]
         .find(|r| r.id == "SSH-002")
         .unwrap();
     assert_eq!(ssh002_after.status, Status::Fail);
-    assert!(ssh002_after
-        .details
-        .iter()
-        .any(|d| d.contains("waiver expired on 2026-06-01")));
+    assert!(
+        ssh002_after
+            .details
+            .iter()
+            .any(|d| d.contains("waiver expired on 2026-06-01"))
+    );
 }
 
 #[test]

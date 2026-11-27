@@ -165,8 +165,8 @@ mod tests {
     use crate::model::Status;
     use crate::rules::schema::KernelOption;
     use crate::sys::RootFsSystemView;
-    use flate2::write::GzEncoder;
     use flate2::Compression;
+    use flate2::write::GzEncoder;
     use std::fs;
     use std::io::Write;
     use tempfile::tempdir;

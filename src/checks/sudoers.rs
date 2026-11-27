@@ -469,7 +469,7 @@ fn has_no_authenticate(line: &str) -> bool {
 mod tests {
     use super::*;
     use crate::model::Status;
-    use crate::sys::{rootfs::FIXTURE_META_FILE, RootFsSystemView};
+    use crate::sys::{RootFsSystemView, rootfs::FIXTURE_META_FILE};
     use std::fs;
     use tempfile::tempdir;
 

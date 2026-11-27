@@ -254,10 +254,11 @@ mod tests {
         assert_eq!(reg.find_by_identifier("5.1.20")[0].id, "SSH-002");
         assert_eq!(reg.find_by_identifier("CIS 1.4.1")[0].id, "BOOT-002");
         assert_eq!(reg.find_by_identifier("6.2.3.20")[0].id, "LOG-013");
-        assert!(reg
-            .find_by_identifier("R9")
-            .iter()
-            .any(|r| r.id == "KERN-001"));
+        assert!(
+            reg.find_by_identifier("R9")
+                .iter()
+                .any(|r| r.id == "KERN-001")
+        );
     }
 
     #[test]

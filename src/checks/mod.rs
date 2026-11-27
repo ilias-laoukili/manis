@@ -382,9 +382,10 @@ mod tests {
         let view = RootFsSystemView::from_root(root.path()).expect("view");
         let out = package_repos::evaluate(&debian_repos_spec(), &view);
         assert_eq!(out.status, Status::Warn);
-        assert!(out
-            .details
-            .iter()
-            .any(|d| d.contains("cloud.sources: symbolic link target unavailable")));
+        assert!(
+            out.details
+                .iter()
+                .any(|d| d.contains("cloud.sources: symbolic link target unavailable"))
+        );
     }
 }

@@ -98,7 +98,7 @@ fn parse_octal_mode(raw: &str) -> Result<u32, std::num::ParseIntError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sys::{rootfs::FIXTURE_META_FILE, RootFsSystemView};
+    use crate::sys::{RootFsSystemView, rootfs::FIXTURE_META_FILE};
     use std::fs;
     use tempfile::tempdir;
 

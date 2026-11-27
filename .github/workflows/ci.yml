@@ -42,6 +42,22 @@ jobs:
       - name: Run tests
         run: cargo test --all-targets
 
+  msrv:
+    name: MSRV (rust-version from Cargo.toml)
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build and test with the declared rust-version
+        run: |
+          MSRV=$(sed -n 's/^rust-version = "\(.*\)"$/\1/p' Cargo.toml)
+          test -n "$MSRV"
+          rustup toolchain install "$MSRV" --profile minimal
+          cargo +"$MSRV" build --locked --all-targets
+          cargo +"$MSRV" test --locked --all-targets
+
   docker-integration:
     name: Live Ubuntu 24.04 Docker Integration
     runs-on: ubuntu-24.04

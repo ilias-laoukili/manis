@@ -11,8 +11,7 @@ use crate::sys::SystemView;
 pub fn evaluate(spec: &WorldWritableCheck, view: &dyn SystemView) -> CheckOutcome {
     let roots: Vec<&str> = spec.search_roots.iter().map(String::as_str).collect();
     let skips: Vec<&str> = spec.skip_dirs.iter().map(String::as_str).collect();
-    let expected =
-        "zero world-writable regular files and sticky bit (+t) set on all world-writable directories";
+    let expected = "zero world-writable regular files and sticky bit (+t) set on all world-writable directories";
 
     let walk = match view.walk_files(&roots, &skips) {
         Ok(report) => report,
@@ -103,7 +102,7 @@ pub fn evaluate(spec: &WorldWritableCheck, view: &dyn SystemView) -> CheckOutcom
 mod tests {
     use super::*;
     use crate::model::Status;
-    use crate::sys::{rootfs::FIXTURE_META_FILE, RootFsSystemView};
+    use crate::sys::{RootFsSystemView, rootfs::FIXTURE_META_FILE};
     use std::fs;
     use tempfile::tempdir;
 

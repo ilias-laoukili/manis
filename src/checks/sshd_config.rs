@@ -1,7 +1,7 @@
 //! `sshd_config` check primitive implementing OpenSSH first-match-wins parsing with
 //! `Include` support (`/etc/ssh/sshd_config.d/*.conf`).
 
-use crate::checks::{expand_virtual_paths, CheckOutcome};
+use crate::checks::{CheckOutcome, expand_virtual_paths};
 use crate::rules::schema::{SshdConfigCheck, SshdOp, SshdParam};
 use crate::sys::SystemView;
 use std::collections::{BTreeMap, BTreeSet};
@@ -214,7 +214,7 @@ fn eval_sshd_param(param: &SshdParam, actual: &str) -> bool {
             let Ok(cur) = actual.parse::<i64>() else {
                 return false;
             };
-            let min_ok = param.min_value.map_or(true, |min| cur >= min);
+            let min_ok = param.min_value.is_none_or(|min| cur >= min);
             min_ok && cur <= max
         }
         SshdOp::Ge => {
